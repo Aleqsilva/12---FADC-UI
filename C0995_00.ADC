@@ -1,0 +1,171 @@
+//Local: QUILOMBO (IQB 2)
+//Programador: Pedro S. Melo Croce
+//Revisor: João Paulo Rocha
+//Nº de Revisão: 0.00
+
+[IDENTIFICATION]
+ID					12:394			//ID of COM board
+CHANNEL				4:0			//Both Channels
+
+[CONFIG]
+CFG_INTERVAL		8:14
+RESERVED			6:0
+INTERVAL			2:3		//3 is default - 160 ms; 0..10 ms, 1..40 ms, 2..80 ms, 3..160 ms
+
+//---------------------------------------   
+// Configuração do endereço IP da porta 1
+//---------------------------------------
+[CONFIG]    
+CFG_MY_IP_NW1		8:1		// IP Address Channel1
+MY_IP_NW1_B1		8:192				 
+MY_IP_NW1_B2		8:168
+MY_IP_NW1_B3		8:172	
+MY_IP_NW1_B4		8:179
+
+//---------------------------------------   
+// Configuração do endereço IP da porta 2
+//---------------------------------------
+// [CONFIG]
+// CFG_MY_IP_NW2		8:2		// IP Address Channel1
+// MY_IP_NW2_B1		8:				 
+// MY_IP_NW2_B2		8:
+// MY_IP_NW2_B3		8:
+// MY_IP_NW2_B4		8:
+
+//----------------------------------------  
+// Definição da máscara de subrede própria
+//----------------------------------------
+[CONFIG]
+CFG_MY_MASK			8:5		 
+RESERVED			3:0					 
+MY_MASK_NW1			5:28		//Subnet mask for network 1 		 
+RESERVED			3:0					 
+MY_MASK_NW2			5:0		//Subnet mask for network 2 (enter 0, if not used)		
+
+//---------------------------------
+// Default gateway NW1 (Ethernet 1)  
+// Configurada uma 1x por rede  
+//---------------------------------
+[CONFIG]
+CFG_DFLT_GTWY_IP    8:18    // Default gateway IP address network 1
+DFLT_GTWY_IP_B1		8:192
+DFLT_GTWY_IP_B2		8:168
+DFLT_GTWY_IP_B3		8:172
+DFLT_GTWY_IP_B4		8:177
+
+//----------------------------------------------------------------
+// Endereço Ip de destino da rede 1 para encaminhamento interno
+// Configurado até 16x (Primeira palavra 32, segunda 33... até 47)
+//----------------------------------------------------------------
+
+//Para FDS IQB-1
+[CONFIG]
+CFG_INT_ID_DEST_NW1    	8:32
+DEST_IP_INT_ID_NW1_B1	8:192
+DEST_IP_INT_ID_NW1_B2   8:168
+DEST_IP_INT_ID_NW1_B3   8:172
+DEST_IP_INT_ID_NW1_B4   8:180
+
+//Para FAdC IJU-1     
+[CONFIG]
+CFG_INT_ID_DEST_NW1    	8:33
+DEST_IP_INT_ID_NW1_B1	8:192
+DEST_IP_INT_ID_NW1_B2   8:168
+DEST_IP_INT_ID_NW1_B3   8:172
+DEST_IP_INT_ID_NW1_B4   8:139
+
+//Para FAdC IQB-1 
+[CONFIG]
+CFG_INT_ID_DEST_NW1    	8:34
+DEST_IP_INT_ID_NW1_B1	8:192
+DEST_IP_INT_ID_NW1_B2   8:168
+DEST_IP_INT_ID_NW1_B3   8:172
+DEST_IP_INT_ID_NW1_B4   8:195
+
+//----------------------------------------------------------------
+// Endereço Ip de destino da rede 2 para encaminhamento interno
+// Configurado até 16x (Primeira palavra 48, segunda 49... até 63)
+//----------------------------------------------------------------
+
+// Para FDS IPG8 
+// [CONFIG]
+// CFG_INT_ID_DEST_NW2    	8:48
+// DEST_IP_INT_ID_NW2_B1	8:192
+// DEST_IP_INT_ID_NW2_B2   8:168
+// DEST_IP_INT_ID_NW2_B3   8:172
+// DEST_IP_INT_ID_NW2_B4   8:124
+
+//Para FDS IJU1
+// [CONFIG]
+// CFG_INT_ID_DEST_NW2    	8:49
+// DEST_IP_INT_ID_NW2_B1	8:192
+// DEST_IP_INT_ID_NW2_B2   8:168
+// DEST_IP_INT_ID_NW2_B3   8:172
+// DEST_IP_INT_ID_NW2_B4   8:180
+
+//Para FAdC IUF2 
+// [CONFIG]
+// CFG_INT_ID_DEST_NW2    	8:50
+// DEST_IP_INT_ID_NW2_B1	8:192
+// DEST_IP_INT_ID_NW2_B2   8:168
+// DEST_IP_INT_ID_NW2_B3   8:172
+// DEST_IP_INT_ID_NW2_B4   8:139
+
+//Para FAdC IBA1 
+// [CONFIG]
+// CFG_INT_ID_DEST_NW2    	8:51
+// DEST_IP_INT_ID_NW2_B1	8:192
+// DEST_IP_INT_ID_NW2_B2   8:168
+// DEST_IP_INT_ID_NW2_B3   8:172
+// DEST_IP_INT_ID_NW2_B4   8:195
+
+//---------------------------------------------------------------
+// Encaminhamento de dados de contagem de eixo via Ethernet (UDP)
+//---------------------------------------------------------------
+// IJU-1 - PARA CONTAGEM
+[CONFIG]
+CFG_FWRD_ACD			8:9		//forwarding axle count-ing data from CAN to UDP
+INT_ID_DEST				4:1		//socket 0..15
+CAN_TX_ID				12:325		//ID of the AEB whose data should be sent (0 not allowed, 1..4095)
+
+//IQB-1 - PARA CONTAGEM
+[CONFIG]
+CFG_FWRD_ACD			8:9		//forwarding axle count-ing data from CAN to UDP
+INT_ID_DEST				4:2		//socket 0..15
+CAN_TX_ID				12:350		//ID of the AEB whose data should be sent (0 not allowed, 1..4095)
+
+//IQB-1 - PARA CONTAGEM
+[CONFIG]
+CFG_FWRD_ACD			8:9		//forwarding axle count-ing data from CAN to UDP
+INT_ID_DEST				4:2		//socket 0..15
+CAN_TX_ID				12:340		//ID of the AEB whose data should be sent (0 not allowed, 1..4095)
+
+//IQB-1 - PARA SENSIBILIZAÇÃO
+[CONFIG]
+CFG_FWRD_ACD			8:9		//forwarding axle count-ing data from CAN to UDP
+INT_ID_DEST				4:2		//socket 0..15
+CAN_TX_ID				12:345		//ID of the AEB whose data should be sent (0 not allowed, 1..4095)
+
+//---------------------------------------------------------------
+// Encaminhamento de dados de diagnóstico
+//---------------------------------------------------------------
+
+// FDS IQB1
+[CONFIG]
+CFG_FWRD_DIAG		8:11		//configuration forwarding diagnostic mes-sages from CAN to UDP
+RESERVED			4:0
+INT_ID_DEST			4:1			//socket 0..15 (depending on configuration of CFG_INT_ID_DEST_NW1 resp. CFG_INT_ID_DEST_NW2
+
+//--------------------------------------------------
+// Número do projeto
+//--------------------------------------------------
+[CONFIG]
+CFG_PROJECT_COM		8:13
+RESERVED			3:0
+VERIFY_VERSION		1:0				//0 is default - do not check entry “VERIFY“ and “VERSION“
+PROJECT_NUMBER		20:1			//0 is default 
+
+// PROTECTION
+[PROTECTION]
+COMPONENT			8:108				//identification of component, COM-Fse R2
+VERSION				48:0x202509091120	//time of data generation	(YYYYMMDDhhmm)

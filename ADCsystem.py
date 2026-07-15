@@ -6,11 +6,14 @@ Diagrama: ADCConfig, Entrada, TipoDado, TipoADC, ADCParser, Validador,
 
 from __future__ import annotations
 
+import tkinter.font as tkfont
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from enum import Enum
 from typing import Any, List, Optional
 import re
+
+from matplotlib.pylab import rint
 
 # ═══════════════════════════════════════════════════════════
 # MODEL
@@ -22,7 +25,7 @@ class TipoADC(Enum):
 
 
 class Entrada:
-    def __init__(self, block: str, cfg: bool, keyword: str, identificator: str, valor: Any, num_bits: str, reserved: bool = False):
+    def __init__(self, block: str, cfg: bool, keyword: str, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False):
         self.block = block
         self.cfg = cfg
         self.keyword = keyword
@@ -30,6 +33,8 @@ class Entrada:
         self.num_bits = num_bits
         self.valor = valor
         self.reserved = reserved
+        self.comentario = comentario
+        self.is_comment = is_comment
 
     def validar(self) -> bool:
         if self.reserved and self.valor != "0":
@@ -89,6 +94,10 @@ class ADCParser:
         esta_salvando = False
 
         for linha in linhas:
+            if linha.startswith("//"):
+                comentario = linha.split("//", 1)[1].strip()
+                config.adicionar_entrada(Entrada(block="", cfg=False, keyword="", identificator="", valor=linha, num_bits="0", reserved=False, is_comment = True, comentario=comentario))
+                
             if any(tag in linha for tag in ["[IDENTIFICATION]","[CONFIG]","[PROTECTION]"]):
                 block = re.search(r"\[(.*?)\]", linha).group(1)
                 esta_salvando = True
@@ -99,14 +108,12 @@ class ADCParser:
                 continue
 
             if esta_salvando:
-                    keyword, num_bits, valor = self.obtem_valores_linha(linha)
-                    if keyword and num_bits and valor:
-                        if linha.startswith("CFG_"):
-                            config.adicionar_entrada(Entrada(block=block, cfg=True, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=False))
-                        elif linha.startswith("RESERVED"):
-                            config.adicionar_entrada(Entrada(block=block, cfg=False, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=True))
-                        else:
-                            config.adicionar_entrada(Entrada(block=block, cfg=False, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=False))
+                if "//" in linha:
+                    comentario = linha.split("//", 1)[1].strip()
+
+                keyword, num_bits, valor = self.obtem_valores_linha(linha)
+                if keyword and num_bits and valor:
+                    config.adicionar_entrada(Entrada(block=block, cfg=True if linha.startswith("CFG_") else False, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None))
         return config
 
     def gerar(self, config: ADCConfig, arquivo: str) -> None:
@@ -139,12 +146,7 @@ class ADCParser:
     def obtem_valores_linha(self, linha: str) -> tuple[str, str, str]:
         """Extrai os valores de uma linha do arquivo ADC e retorna como uma tupla (keyword, num_bits, valor)."""
         if linha.startswith("//"):
-            line = linha.split('//', 1)[1]
-            print(f"Linha de comentario salva: {line}")
             return ["", "", ""]
-        elif "//" in linha:
-            line = linha.split('//', 1)[1]
-            print(f"Linha de comentario salva: {line}")
         
         partes = linha.split()
         bits, valor = partes[1].split(":")
@@ -214,84 +216,135 @@ class ADCController:
 class FormularioADC(tk.LabelFrame):
     def __init__(self, parent: tk.Widget, controller: ADCController, **kw):
         super().__init__(parent, text="Entradas", padx=8, pady=8, **kw)
-        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.content = tk.Frame(self.canvas, background="#f0f0f0")
-
-        self.window = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-
-        self.content.bind("<Configure>", self._on_frame_configure)
-
         self._controller = controller
         self._vars: dict[str, tk.StringVar] = {}
 
-    def _on_frame_configure(self, event: tk.Event) -> None:
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        if self.content.winfo_reqwidth() != self.canvas.winfo_width():
-            self.canvas.configure(width=self.content.winfo_reqwidth())
-
     def renderizar_campos(self, config: ADCConfig, comment_state: bool) -> None:
-        for widget in self.content.winfo_children():
+        for widget in self.winfo_children():
             widget.destroy()
         self._vars.clear()
 
-        columns = ("Nome", "Num Bits", "Valor") + ("Comentário",) if comment_state else ()
+        columns = ("Nome", "Num Bits", "Valor") + (("Comentário",) if comment_state else ())
+        len_columns = len(columns)
 
-        for col, txt in enumerate(columns):
-            tk.Label(self.content, text=txt, font=("Segoe UI", 9, "bold")).grid(
-                row=0, column=col, padx=6, pady=(0, 4), sticky="nsew"
-            )
+        treeview = ttk.Treeview(self, columns=columns, show="headings")
+        size_columns = [150, 100, 100] + ([200] if comment_state else [])
+        for col, width in zip(columns, size_columns):
+            treeview.heading(col, text=col)
+            treeview.column(col, width=width, anchor="w")
+        treeview.bind("<Double-1>", lambda event: self.on_double_click(event, treeview, comment_state))
 
-        row = 1
+
+        hsb = ttk.Scrollbar(self, orient="horizontal", command=treeview.xview)
+        vsb = ttk.Scrollbar(self, orient="vertical", command=treeview.yview)
+
+        treeview.configure(xscrollcommand=hsb.set, yscrollcommand=vsb.set)
+
         title_id = False
         title_config = False
         title_protection = False
+        true_grey_false_white = True
+
         for entrada in config.entradas:
-            if entrada.block == "IDENTIFICATION":
-                if not title_id:
-                    ttk.Separator(self.content, orient="horizontal").grid(row=row, column=0, columnspan=3, sticky="ew", pady=(2, 4)); row += 1
-                    tk.Label(self.content, text="IDENTIFICATION", background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=0, columnspan=3, sticky="w", pady=(4, 2)); row += 1
-                    title_id = True
-                tk.Label(self.content, text=entrada.identificator, background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=0, padx=6, sticky="w")
-                tk.Label(self.content, text=entrada.num_bits, background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=1, padx=6, sticky="w")
-                tk.Label(self.content, text=entrada.valor, background="#f0f0f0", width=20, font="Helvetica 10 bold").grid(row=row, column=2, padx=6); row += 1
-            elif entrada.block == "CONFIG":
-                if not title_config:
-                    ttk.Separator(self.content, orient="horizontal").grid(row=row, column=0, columnspan=3, sticky="ew", pady=(2, 4)); row += 1
-                    tk.Label(self.content, text="CONFIG", background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=0, columnspan=3, sticky="w", pady=(4, 2)); row += 1
-                    title_config = True
-                if entrada.cfg:
-                    ttk.Separator(self.content, orient="horizontal").grid(row=row, column=0, columnspan=3, sticky="ew", pady=(2, 4)); row += 1
-                    tk.Label(self.content, text=entrada.identificator, background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=0, padx=6, sticky="w")
-                    tk.Label(self.content, text=entrada.num_bits, background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=1, padx=6, sticky="w")
-                    tk.Label(self.content, text=entrada.valor, background="#f0f0f0", width=20, font="Helvetica 10 bold").grid(row=row, column=2, padx=6); row += 1
-                elif entrada.reserved:
-                    tk.Label(self.content, text=entrada.identificator, background="#f0f0f0").grid(row=row, column=0, padx=6, sticky="w")
-                    tk.Label(self.content, text=entrada.num_bits, background="#f0f0f0").grid(row=row, column=1, padx=6, sticky="w")
-                    tk.Label(self.content, text=entrada.valor, background="#f0f0f0", width=20).grid(row=row, column=2, padx=6); row += 1
-                else:
-                    tk.Label(self.content, text=entrada.identificator).grid(row=row, column=0, padx=6, sticky="w")
-                    var = tk.StringVar(value=str(entrada.valor))
-                    self._vars[entrada.identificator] = var
-                    tk.Label(self.content, text=entrada.num_bits).grid(row=row, column=1, padx=6, sticky="w")
-                    tk.Entry(self.content, textvariable=var, width=20).grid(row=row, column=2, padx=6); row += 1
-            elif entrada.block == "PROTECTION":
-                if not title_protection:
-                    ttk.Separator(self.content, orient="horizontal").grid(row=row, column=0, columnspan=3, sticky="ew", pady=(2, 4)); row += 1
-                    tk.Label(self.content, text="PROTECTION", background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=0, columnspan=3, sticky="w", pady=(4, 2)); row += 1
-                    title_protection = True
-                tk.Label(self.content, text=entrada.identificator, background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=0, padx=6, sticky="w")
-                tk.Label(self.content, text=entrada.num_bits, background="#f0f0f0", font="Helvetica 10 bold").grid(row=row, column=1, padx=6, sticky="w")
-                tk.Label(self.content, text=entrada.valor, background="#f0f0f0", width=20, font="Helvetica 10 bold").grid(row=row, column=2, padx=6); row += 1
+            if entrada.is_comment:
+                if comment_state:
+                    treeview.insert("", "end", values=("","","", entrada.comentario), tags=("comment",))
             else:
-                raise ValueError(f"Bloco desconhecido: {entrada.block}")
+                if entrada.block == "IDENTIFICATION":
+                    if not title_id:
+                        treeview.insert("", "end", values=("--- IDENTIFICATION ----------",) + ("------------------------",) * (len_columns - 1), tags=("title",))
+                        title_id = True
+                    values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
+                    treeview.insert("", "end", values=values)
+                elif entrada.block == "CONFIG":
+                    if not title_config:
+                        treeview.insert("", "end", values=("--- CONFIG ----------",) + ("------------------------",) * (len_columns - 1), tags=("title",))
+                        title_config = True
+                    values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
+                    true_grey_false_white = not true_grey_false_white if entrada.cfg else true_grey_false_white
+                    if entrada.cfg:
+                        treeview.insert("", "end", values=("", "", "", ""))
+                    treeview.insert("", "end", values=values, tags=("color1",) if true_grey_false_white else ())
+                elif entrada.block == "PROTECTION":
+                    if not title_protection:
+                        treeview.insert("", "end", values=("--- PROTECTION ----------",) + ("------------------------",) * (len_columns - 1), tags=("title",))
+                        title_protection = True
+                    values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
+                    treeview.insert("", "end", values=values)
+                else:
+                    raise ValueError(f"Bloco desconhecido: {entrada.block}")
+
+        treeview.grid(row=0, column=0, columnspan=len_columns, sticky="nsew")
+        treeview.tag_configure("title", font=("Segoe UI", 10, "bold"), background="#aaaaaa")
+        treeview.tag_configure("color1", font=("Segoe UI", 9), background="#a5a2a2")
+
+        if comment_state:
+            self.auto_fit_columns(treeview)
+
+        hsb.grid(row=1, column=0, columnspan=len_columns, sticky="ew")
+        vsb.grid(row=0, column=len_columns, sticky="ns")
+
+
+    def on_double_click(self, event: tk.Event, treeview: ttk.Treeview, comment_state: bool) -> None:
+        try:
+            self.entryPopup.destroy()
+        except AttributeError:
+            pass
+        rowid = treeview.identify_row(event.y)
+        column = treeview.identify_column(event.x)
+
+        if not rowid or not column:
+            return
+        
+        x, y, width, height = treeview.bbox(rowid, column)
+
+        pady = height // 2
+
+        text = treeview.item(rowid, "values")[int(column[1:]) - 1]
+        self.entryPopup = EntryPopup(self, treeview, rowid, int(column[1:])-1, text)
+        self.entryPopup.place(x=x, y=y + pady, width=width, height=height, anchor="w")
+
 
     def coletar_dados(self) -> dict[str, str]:
         return {nome: var.get() for nome, var in self._vars.items()}
 
+    def auto_fit_columns(self, treeview: ttk.Treeview) -> None:
+        font = tkfont.nametofont("TkDefaultFont")
+
+        max_width = font.measure("Comentário")  # cabeçalho
+
+        for item in treeview.get_children():
+            valor = treeview.item(item, "values")
+            has_comment = len(valor) > 3
+            if has_comment:  # índice da coluna Comentário
+                max_width = max(max_width, font.measure(str(valor[3])))
+
+        treeview.column("Comentário", width=max_width + 20)
+
+class EntryPopup(tk.Entry):
+    def __init__(self, parent, treeview, iid, column, text, **kw):
+        super().__init__(parent, **kw)
+        self.tv = treeview
+        self.iid = iid
+        self.column = column
+
+        self.insert(0, text)
+        self['exportselection'] = False
+
+        self.focus_force()
+        self.select_all()
+        self.bind("<Return>", self.on_return)
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def on_return(self, event):
+        vals = list(self.tv.item(self.iid, "values"))
+        vals[self.column] = self.get()
+        self.tv.item(self.iid, values=vals)
+        self.destroy()
+
+    def select_all(self, *ignore):
+        self.selection_range(0, tk.END)
+        return 'break'
 
 # ═══════════════════════════════════════════════════════════
 # VIEW — MainView

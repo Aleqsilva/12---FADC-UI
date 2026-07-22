@@ -8,16 +8,26 @@ from __future__ import annotations
 
 import tkinter.font as tkfont
 import tkinter as tk
+import re
+import json
+
 from tkinter import filedialog, messagebox, ttk
 from enum import Enum
 from typing import Any, List, Optional
-import re
-
 from matplotlib.pylab import rint
 
 # ═══════════════════════════════════════════════════════════
 # MODEL
 # ═══════════════════════════════════════════════════════════
+
+class BancoDadosConfig:
+    def __init__(self):
+        try:
+            arquivo_json = "bd_config.json"
+            with open(arquivo_json, 'r', encoding='utf-8') as file:
+                self.bd_data = json.load(file)
+        except:
+            raise RuntimeError(f"Erro ao carregar o arquivo {arquivo_json}.")
 
 class TipoADC(Enum):
     AEB = "2"
@@ -25,7 +35,7 @@ class TipoADC(Enum):
 
 
 class Entrada:
-    def __init__(self, block: str, cfg: bool, keyword: str, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False):
+    def __init__(self, block: str, cfg: bool, keyword: str, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False, config_name: Optional[str] = ""):
         self.block = block
         self.cfg = cfg
         self.keyword = keyword
@@ -35,6 +45,7 @@ class Entrada:
         self.reserved = reserved
         self.comentario = comentario
         self.is_comment = is_comment
+        self.config_name = config_name
 
     def validar(self) -> bool:
         if self.reserved and self.valor != "0":
@@ -45,25 +56,60 @@ class Entrada:
 
     def __repr__(self) -> str:
         return f"{self.identificator!r}            {self.num_bits}:{self.valor!r}"
-
+    
+    def to_dict(self) -> dict:
+        return {
+            "nome": self.identificator,
+            "num_bit": self.num_bits,
+            "valor_range": self.valor,
+        }
 
 class ADCConfig:
     def __init__(self, tipo: TipoADC, id: str = ""):
-        self.id: str                 = id
+        self.id = id
         self.tipo: TipoADC           = tipo
+        self.configs_dict = {}
         self.entradas: List[Entrada] = []
+        self.protection = {
+            "COMPONENT": "",
+            "VERSION": "",
+        }
 
     def adicionar_entrada(self, entrada: Entrada) -> None:
         self.entradas.append(entrada)
 
+    def preenche_config_dict(self, config: ADCConfig, entrada: Entrada) -> None:
+        if entrada.cfg:
+            chave = f"{config.tipo.name}:{entrada.keyword}"
+            if chave not in self.configs_dict:
+                self.configs_dict[chave] = []
+
+            self.configs_dict[chave].append(config.config_to_dict(entrada, config))
+        else:
+            chave = f"{config.tipo.name}:{entrada.config_name}"
+            self.configs_dict[chave][-1]["entradas"].append(entrada.to_dict())
+
     def obter_entrada(self, identificator: str) -> Optional[Entrada]:
         return next((e for e in self.entradas if e.identificator == identificator), None)
 
+    def config_to_dict(self, entrada, config) -> dict:
+        return{
+                "nome": entrada.keyword,
+                "num_bit": entrada.num_bits,
+                "range": entrada.valor,
+                "id": f"{entrada.num_bits}:{entrada.valor}",
+                "origem": config.tipo.name,
+                "entradas": [],
+            }
+
     def __repr__(self) -> str:
-        return f"ADCConfig(id={self.id!r}, tipo={self.tipo}, entradas={self.entradas})"
+        return f"ADCConfig(id={self.id['id']!r}, tipo={self.tipo}, entradas={self.entradas})"
 
 
 class Validador:
+    def __init__(self):
+        self.bd = BancoDadosConfig()
+
     def validar_config(self, config: ADCConfig) -> bool:
         for entrada in config.entradas:
             entrada.validar()
@@ -92,6 +138,7 @@ class ADCParser:
         config = ADCConfig(config_tipo, id=config_id)       
 
         esta_salvando = False
+        cfg_name = None
 
         for linha in linhas:
             if linha.startswith("//"):
@@ -113,7 +160,19 @@ class ADCParser:
 
                 keyword, num_bits, valor = self.obtem_valores_linha(linha)
                 if keyword and num_bits and valor:
-                    config.adicionar_entrada(Entrada(block=block, cfg=True if linha.startswith("CFG_") else False, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None))
+
+                    if linha.startswith("CFG_"):
+                        cfg_name = keyword
+                    elif linha.startswith("PROTECTION"):
+                        cfg_name = None
+
+                    entrada = Entrada(block=block, cfg=True if linha.startswith("CFG_") else False, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None, config_name=cfg_name if not linha.startswith("CFG_") else None)
+                    config.adicionar_entrada(entrada)
+                    if not entrada.is_comment and entrada.block == "CONFIG":
+                        config.preenche_config_dict(config, entrada)
+
+        print(json.dumps(config.configs_dict, indent=2))
+
         return config
 
     def gerar(self, config: ADCConfig, arquivo: str) -> None:
@@ -124,33 +183,43 @@ class ADCParser:
             width = max(len(e.identificator) for e in config.entradas) + 4
 
             for e in config.entradas:
-                if e.block == "IDENTIFICATION":
+                if e.is_comment:
+                    f.write(f"{e.valor}\n")
+                elif e.block == "IDENTIFICATION":
+                    comment = f"    //{e.comentario}" if e.comentario else ""
                     if not id_title:
                         f.write("[IDENTIFICATION]\n")
-
-                    f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}\n")
+                    f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}{comment}\n")
                     id_title = True
                 elif e.block == "CONFIG":
+                    comment = f"    //{e.comentario}" if e.comentario else ""
                     if e.cfg:
                         f.write("\n[CONFIG]\n")
-                        f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}\n")
+                        f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}{comment}\n")
                     else:
-                        f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}\n")
+                        f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}{comment}\n")
                 elif e.block == "PROTECTION":
+                    comment = f"    //{e.comentario}" if e.comentario else ""
                     if not protection_title:
                         f.write("\n[PROTECTION]\n")
 
                         protection_title = True
-                    f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}\n")
+                    f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}{comment}\n")
         
-    def obtem_valores_linha(self, linha: str) -> tuple[str, str, str]:
+    def obtem_valores_linha(self, linha) -> tuple[str, str, str]:
         """Extrai os valores de uma linha do arquivo ADC e retorna como uma tupla (keyword, num_bits, valor)."""
         if linha.startswith("//"):
             return ["", "", ""]
         
         partes = linha.split()
-        bits, valor = partes[1].split(":")
-        return [str(partes[0]), str(bits), str(valor)]
+
+        if len(partes) < 2:
+            raise ValueError(f"Linha mal formatada: {linha}")
+        
+        nome = partes[0]
+        num_bits, valor = partes[1].split(":")
+
+        return [str(nome), str(num_bits), str(valor)]    
 
     def obtem_tipo_adc(self, linhas: list[str]) -> TipoADC:
         for linha in linhas:
@@ -217,7 +286,7 @@ class FormularioADC(tk.LabelFrame):
     def __init__(self, parent: tk.Widget, controller: ADCController, **kw):
         super().__init__(parent, text="Entradas", padx=8, pady=8, **kw)
         self._controller = controller
-        self._vars: dict[str, tk.StringVar] = {}
+        self._vars = {}
 
     def renderizar_campos(self, config: ADCConfig, comment_state: bool) -> None:
         for widget in self.winfo_children():
@@ -233,7 +302,6 @@ class FormularioADC(tk.LabelFrame):
             treeview.heading(col, text=col)
             treeview.column(col, width=width, anchor="w")
         treeview.bind("<Double-1>", lambda event: self.on_double_click(event, treeview, comment_state))
-
 
         hsb = ttk.Scrollbar(self, orient="horizontal", command=treeview.xview)
         vsb = ttk.Scrollbar(self, orient="vertical", command=treeview.yview)
@@ -251,39 +319,51 @@ class FormularioADC(tk.LabelFrame):
                     treeview.insert("", "end", values=("","","", entrada.comentario), tags=("comment",))
             else:
                 if entrada.block == "IDENTIFICATION":
+
                     if not title_id:
-                        treeview.insert("", "end", values=("--- IDENTIFICATION ----------",) + ("------------------------",) * (len_columns - 1), tags=("title",))
+                        treeview.insert("", "end", values=("IDENTIFICATION",) + ("",) * (len_columns - 1), tags=("title",))
                         title_id = True
+
                     values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
                     treeview.insert("", "end", values=values)
+
                 elif entrada.block == "CONFIG":
+
                     if not title_config:
-                        treeview.insert("", "end", values=("--- CONFIG ----------",) + ("------------------------",) * (len_columns - 1), tags=("title",))
+                        treeview.insert("", "end", values=("CONFIG",) + ("",) * (len_columns - 1), tags=("title",))
                         title_config = True
+
                     values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
                     true_grey_false_white = not true_grey_false_white if entrada.cfg else true_grey_false_white
+
                     if entrada.cfg:
-                        treeview.insert("", "end", values=("", "", "", ""))
-                    treeview.insert("", "end", values=values, tags=("color1",) if true_grey_false_white else ())
+                        treeview.insert("", "end", values=values, tags=("style_cfg_bold",) if true_grey_false_white else ("style_cfg_bold_white",))
+                    else:
+                        treeview.insert("", "end", values=values, tags=("grey/white",) if true_grey_false_white else ())
+
                 elif entrada.block == "PROTECTION":
                     if not title_protection:
-                        treeview.insert("", "end", values=("--- PROTECTION ----------",) + ("------------------------",) * (len_columns - 1), tags=("title",))
+                        treeview.insert("", "end", values=(" PROTECTION",) + ("",) * (len_columns - 1), tags=("title",))
                         title_protection = True
+
                     values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
                     treeview.insert("", "end", values=values)
                 else:
                     raise ValueError(f"Bloco desconhecido: {entrada.block}")
 
         treeview.grid(row=0, column=0, columnspan=len_columns, sticky="nsew")
-        treeview.tag_configure("title", font=("Segoe UI", 10, "bold"), background="#aaaaaa")
-        treeview.tag_configure("color1", font=("Segoe UI", 9), background="#a5a2a2")
+        treeview.tag_configure("title", font=("Segoe UI", 10, "bold"), background="#1F1D1D", foreground="#ffffff")
+        treeview.tag_configure("grey/white", font=("Segoe UI", 9), background="#a5a2a2")
+        treeview.tag_configure("style_cfg_bold", font=("Segoe UI", 9, "bold"), background="#a5a2a2")
+        treeview.tag_configure("style_cfg_bold_white", font=("Segoe UI", 9, "bold"), background="#ffffff")
+        treeview.tag_configure("comment", font=("Segoe UI", 9), foreground="#6A9955")
+
 
         if comment_state:
             self.auto_fit_columns(treeview)
 
         hsb.grid(row=1, column=0, columnspan=len_columns, sticky="ew")
         vsb.grid(row=0, column=len_columns, sticky="ns")
-
 
     def on_double_click(self, event: tk.Event, treeview: ttk.Treeview, comment_state: bool) -> None:
         try:
@@ -293,20 +373,26 @@ class FormularioADC(tk.LabelFrame):
         rowid = treeview.identify_row(event.y)
         column = treeview.identify_column(event.x)
 
-        if not rowid or not column:
+        if not rowid or not column or column == "#2" or (column == "#4" and not comment_state):
             return
         
         x, y, width, height = treeview.bbox(rowid, column)
 
         pady = height // 2
 
-        text = treeview.item(rowid, "values")[int(column[1:]) - 1]
+        if any(word in item for item in treeview.item(rowid, "values") for word in ["IDENTIFICATION", "CONFIG", "PROTECTION", "RESERVED", "CFG_"]):
+            return
+
+        text = treeview.item(rowid, "values")[int(column[1:]) - 1] if int(column[1:]) - 1 < len(treeview.item(rowid, "values")) else ""
+
         self.entryPopup = EntryPopup(self, treeview, rowid, int(column[1:])-1, text)
         self.entryPopup.place(x=x, y=y + pady, width=width, height=height, anchor="w")
 
 
     def coletar_dados(self) -> dict[str, str]:
-        return {nome: var.get() for nome, var in self._vars.items()}
+        #for keyword, value in self._vars.items():
+        #    print(f"Coletando dados: {keyword} = {value}")
+        return {keyword: value for keyword, num_bit, value in self._vars.items()}
 
     def auto_fit_columns(self, treeview: ttk.Treeview) -> None:
         font = tkfont.nametofont("TkDefaultFont")
@@ -320,6 +406,7 @@ class FormularioADC(tk.LabelFrame):
                 max_width = max(max_width, font.measure(str(valor[3])))
 
         treeview.column("Comentário", width=max_width + 20)
+
 
 class EntryPopup(tk.Entry):
     def __init__(self, parent, treeview, iid, column, text, **kw):
@@ -338,6 +425,8 @@ class EntryPopup(tk.Entry):
 
     def on_return(self, event):
         vals = list(self.tv.item(self.iid, "values"))
+        if len(vals) <= self.column:
+            vals.extend([""] * (self.column - len(vals) + 1))
         vals[self.column] = self.get()
         self.tv.item(self.iid, values=vals)
         self.destroy()
@@ -475,6 +564,7 @@ class MainView:
 
     def _on_aplicar(self) -> None:
         if self._form is None or self._controller.config is None:
+            print("Nenhuma configuracao carregada para aplicar.")
             return
         dados = self._form.coletar_dados()
         erros = []

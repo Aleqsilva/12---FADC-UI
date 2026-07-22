@@ -1,0 +1,2128 @@
+{
+  "com:CFG_MY_IP_NW1": {
+    "nome": "CFG_MY_IP_NW1",
+    "num_bit": 8,
+    "range": 1,
+    "id": "8:1",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "MY_IP_NW1_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW1_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW1_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW1_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_MY_IP_NW2": {
+    "nome": "CFG_MY_IP_NW2",
+    "num_bit": 8,
+    "range": 2,
+    "id": "8:2",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "MY_IP_NW2_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW2_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW2_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW2_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_MY_IP_NW1_R": {
+    "nome": "CFG_MY_IP_NW1_R",
+    "num_bit": 8,
+    "range": 3,
+    "id": "8:3",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "MY_IP_NW1_R_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW1_R_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW1_R_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW1_R_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_MY_IP_NW2_R": {
+    "nome": "CFG_MY_IP_NW2_R",
+    "num_bit": 8,
+    "range": 4,
+    "id": "8:4",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "MY_IP_NW2_R_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW2_R_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW2_R_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "MY_IP_NW2_R_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_MY_MASK": {
+    "nome": "CFG_MY_MASK",
+    "num_bit": 8,
+    "range": 5,
+    "id": "8:5",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 3,
+        "valor_range": 0
+      },
+      {
+        "nome": "MY_MASK_NW1",
+        "num_bit": 5,
+        "valor_range": null
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 3,
+        "valor_range": 0
+      },
+      {
+        "nome": "MY_MASK_NW2",
+        "num_bit": 5,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_DFLT_GTWY_IP": {
+    "nome": "CFG_DFLT_GTWY_IP",
+    "num_bit": 8,
+    "range": {
+      "tipo": "enum",
+      "valores": [
+        18,
+        19
+      ]
+    },
+    "id": "8:(18,19)",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "DFLT_GTWY_IP_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DFLT_GTWY_IP_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DFLT_GTWY_IP_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DFLT_GTWY_IP_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_GTWY_IP": {
+    "nome": "CFG_GTWY_IP",
+    "num_bit": 8,
+    "range": {
+      "tipo": "range",
+      "min": 20,
+      "max": 23
+    },
+    "id": "8:(20...23)",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "CFG_GTWY_IP_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "CFG_GTWY_IP_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "CFG_GTWY_IP_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "CFG_GTWY_IP_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_GTWY_DEST": {
+    "nome": "CFG_GTWY_DEST",
+    "num_bit": 8,
+    "range": {
+      "tipo": "range",
+      "min": 24,
+      "max": 27
+    },
+    "id": "8:(24...27)",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "GTWY_DEST_IP_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "GTWY_DEST_IP_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "GTWY_DEST_IP_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "GTWY_DEST_IP_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_GTWY_MASK_DEST": {
+    "nome": "CFG_GTWY_MASK_DEST",
+    "num_bit": 8,
+    "range": {
+      "tipo": "range",
+      "min": 28,
+      "max": 31
+    },
+    "id": "8:(28...31)",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 3,
+        "valor_range": 0
+      },
+      {
+        "nome": "GTWY_MASK_DEST",
+        "num_bit": 5,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_INT_ID_DEST_NW1": {
+    "nome": "CFG_INT_ID_DEST_NW1",
+    "num_bit": 8,
+    "range": {
+      "tipo": "range",
+      "min": 32,
+      "max": 47
+    },
+    "id": "8:(32...47)",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "DEST_IP_INT_ID_NW1_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DEST_IP_INT_ID_NW1_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DEST_IP_INT_ID_NW1_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DEST_IP_INT_ID_NW1_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_INT_ID_DEST_NW2": {
+    "nome": "CFG_INT_ID_DEST_NW2",
+    "num_bit": 8,
+    "range": {
+      "tipo": "range",
+      "min": 48,
+      "max": 63
+    },
+    "id": "8:(48...63)",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "DEST_IP_INT_ID_NW2_B1",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DEST_IP_INT_ID_NW2_B2",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DEST_IP_INT_ID_NW2_B3",
+        "num_bit": 8,
+        "valor_range": null
+      },
+      {
+        "nome": "DEST_IP_INT_ID_NW2_B4",
+        "num_bit": 8,
+        "valor_range": null
+      }
+    ]
+  },
+  "com:CFG_FWRD_ACD": {
+    "nome": "CFG_FWRD_ACD",
+    "num_bit": 8,
+    "range": 9,
+    "id": "8:9",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "INT_ID_DEST",
+        "num_bit": 4,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 15
+        }
+      },
+      {
+        "nome": "CAN_TX_ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "com:CFG_FWRD_DIAG": {
+    "nome": "CFG_FWRD_DIAG",
+    "num_bit": 8,
+    "range": 11,
+    "id": "8:11",
+    "origem": "com",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 4,
+        "valor_range": 0
+      },
+      {
+        "nome": "INT_ID_DEST",
+        "num_bit": 4,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 15
+        }
+      }
+    ]
+  },
+  "com:CFG_UDP_PORT_INT": {
+    "nome": "CFG_UDP_PORT_INT",
+    "num_bit": 8,
+    "range": 7,
+    "id": "8:7",
+    "origem": "com",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "UDP_PORT_INT_UNI",
+        "num_bit": 16,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 65535
+        }
+      },
+      {
+        "nome": "UDP_PORT_INT_MULTI",
+        "num_bit": 16,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 65534
+        }
+      }
+    ]
+  },
+  "com:CFG_UDP_PORT_DEST": {
+    "nome": "CFG_UDP_PORT_DEST",
+    "num_bit": 8,
+    "range": 8,
+    "id": "8:8",
+    "origem": "com",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 4,
+        "valor_range": 0
+      },
+      {
+        "nome": "INT_ID_DEST",
+        "num_bit": 4,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 15
+        }
+      },
+      {
+        "nome": "UDP_PORT_DEST",
+        "num_bit": 16,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 65535
+        }
+      }
+    ]
+  },
+  "com:CFG_IP_SWTCH": {
+    "nome": "CFG_IP_SWTCH",
+    "num_bit": 8,
+    "range": 6,
+    "id": "8:6",
+    "origem": "com",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 7,
+        "valor_range": 0
+      },
+      {
+        "nome": "IP_SWTCH",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      }
+    ]
+  },
+  "com:CFG_INTERVAL": {
+    "nome": "CFG_INTERVAL",
+    "num_bit": 8,
+    "range": 14,
+    "id": "8:14",
+    "origem": "com",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 6,
+        "valor_range": 0
+      },
+      {
+        "nome": "INTERVAL",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      }
+    ]
+  },
+  "com:CFG_FILTER_DIAG": {
+    "nome": "CFG_FILTER_DIAG",
+    "num_bit": 8,
+    "range": 12,
+    "id": "8:12",
+    "origem": "com",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 6,
+        "valor_range": 0
+      },
+      {
+        "nome": "FILTER_DIAG1",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "FILTER_DIAG2",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      }
+    ]
+  },
+  "com:CFG_PROJECT_COM": {
+    "nome": "CFG_PROJECT_COM",
+    "num_bit": 8,
+    "range": 13,
+    "id": "8:13",
+    "origem": "com",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "RESERVED",
+        "num_bit": 3,
+        "valor_range": 0
+      },
+      {
+        "nome": "VERSION_VERIFY",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "PROJECT_NUMBER",
+        "num_bit": 20,
+        "valor_range": null
+      }
+    ]
+  },
+  "AEB:CFG_TYPE_PRTCT": {
+    "nome": "CFG_TYPE_PRTCT",
+    "num_bit": 7,
+    "range": 127,
+    "id": "7:127",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "TYPE_PRTCT_CODE",
+        "num_bit": 32,
+        "valor_range": null
+      }
+    ]
+  },
+  "AEB:CFG_ZP_FMA1": {
+    "nome": "CFG_ZP_FMA1",
+    "num_bit": 7,
+    "range": 1,
+    "id": "7:1",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "DIR_INV",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_ZP_FMA2": {
+    "nome": "CFG_ZP_FMA2",
+    "num_bit": 7,
+    "range": 2,
+    "id": "7:2",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "DIR_INV",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_SECTION_OUT": {
+    "nome": "CFG_SECTION_OUT",
+    "num_bit": 7,
+    "range": 8,
+    "id": "7:8",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "CLR_OCC",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 7,
+        "valor_range": 0
+      },
+      {
+        "nome": "AUX1_OUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4
+        }
+      },
+      {
+        "nome": "AUX1_NO_NC",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "AUX2_OUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4
+        }
+      },
+      {
+        "nome": "AUX2_NO_NC",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SECTION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_SUPERVIS_FMA1": {
+    "nome": "CFG_SUPERVIS_FMA1",
+    "num_bit": 7,
+    "range": 3,
+    "id": "7:3",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "LOGIC_TYPE",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESET_TYPE",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 5,
+        "valor_range": 0
+      },
+      {
+        "nome": "RESET_DELAY",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "SECTION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_SUPERVIS_FMA2": {
+    "nome": "CFG_SUPERVIS_FMA2",
+    "num_bit": 7,
+    "range": 4,
+    "id": "7:4",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "LOGIC_TYPE",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESET_TYPE",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 5,
+        "valor_range": 0
+      },
+      {
+        "nome": "RESET_DELAY",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "SECTION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_SYNC_FMA1": {
+    "nome": "CFG_SYNC_FMA1",
+    "num_bit": 7,
+    "range": 5,
+    "id": "7:5",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SECTION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_SYNC_FMA2": {
+    "nome": "CFG_SYNC_FMA2",
+    "num_bit": 7,
+    "range": 6,
+    "id": "7:6",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SECTION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_CONTROL": {
+    "nome": "CFG_CONTROL",
+    "num_bit": 7,
+    "range": 7,
+    "id": "7:7",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SECTION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_ZP-OUT_IO": {
+    "nome": "CFG_ZP-OUT_IO",
+    "num_bit": 7,
+    "range": 10,
+    "id": "7:10",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT1_R",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT1_NO_NC_R",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT2_R",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT2_NO_NC_R",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT3_R",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT3_NO_NC_R",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 4,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_DATA_IO": {
+    "nome": "CFG_DATA_IO",
+    "num_bit": 7,
+    "range": 9,
+    "id": "7:9",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SAFETY_LEVEL_IN",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "SAFETY_LEVEL_OUT",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "AUTO_POSITION",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "POSITION",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "SLCT_TIMEOUT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ID",
+        "num_bit": 12,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 4095
+        }
+      }
+    ]
+  },
+  "AEB:CFG_TIMEOUT": {
+    "nome": "CFG_TIMEOUT",
+    "num_bit": 7,
+    "range": {
+      "tipo": "range",
+      "min": 32,
+      "max": 39
+    },
+    "id": "7:(32...39)",
+    "origem": "AEB",
+    "obrigatoria": true,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "TIMEOUT_VALUE",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  },
+  "AEB:CFG_SECTION": {
+    "nome": "CFG_SECTION",
+    "num_bit": 7,
+    "range": 12,
+    "id": "7:12",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "COMM_FAIL",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "BEHAV_GE",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "CLR_TRACK",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 3,
+        "valor_range": 0
+      },
+      {
+        "nome": "RESET_IN",
+        "num_bit": 4,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 15
+        }
+      },
+      {
+        "nome": "RESET_OUT",
+        "num_bit": 4,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 15
+        }
+      }
+    ]
+  },
+  "AEB:CFG_ZP": {
+    "nome": "CFG_ZP",
+    "num_bit": 7,
+    "range": 13,
+    "id": "7:13",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "INTERVAL",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 2,
+        "valor_range": 0
+      },
+      {
+        "nome": "SUPERVIS_COUNT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "SYSTEM_COUNT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "PARTIAL_COUNT",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_RESET": {
+    "nome": "CFG_RESET",
+    "num_bit": 7,
+    "range": 48,
+    "id": "7:48",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESET_OP_TIME",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "RESET_LD_TIME",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  },
+  "AEB:CFG_AXCNT": {
+    "nome": "CFG_AXCNT",
+    "num_bit": 7,
+    "range": 14,
+    "id": "7:14",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "BEHAV_INPUT1",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "BEHAV_INPUT2",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "BEHAV_INPUT3",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "BEHAV_IOEXB",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_OCC": {
+    "nome": "CFG_OCC",
+    "num_bit": 7,
+    "range": 46,
+    "id": "7:46",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "OCC_EXT",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "OCC_DELAY",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  },
+  "AEB:CFG_BEHAV_TGGL": {
+    "nome": "CFG_BEHAV_TGGL",
+    "num_bit": 7,
+    "range": 15,
+    "id": "7:15",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "BEHAV_RESET",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 1,
+        "valor_range": 0
+      },
+      {
+        "nome": "BEHAV_SIMUL",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 3,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_RSR_TYPE": {
+    "nome": "CFG_RSR_TYPE",
+    "num_bit": 7,
+    "range": 40,
+    "id": "7:40",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RSR_TYPE",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 6,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_ZP-OUT_AEB": {
+    "nome": "CFG_ZP-OUT_AEB",
+    "num_bit": 7,
+    "range": 11,
+    "id": "7:11",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT1_O",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT1_NO_NC_O",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT2_O",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT2_NO_NC_O",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT3_O",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT3_NO_NC_O",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ZP-OUT4_O",
+        "num_bit": 3,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 7
+        }
+      },
+      {
+        "nome": "ZP-OUT4_NO_NC_O",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      }
+    ]
+  },
+  "AEB:CFG_ZP-OUT_EXT": {
+    "nome": "CFG_ZP-OUT_EXT",
+    "num_bit": 7,
+    "range": 47,
+    "id": "7:47",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "SYS_EXT",
+        "num_bit": 16,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 65535
+        }
+      },
+      {
+        "nome": "DIR_LENGTH",
+        "num_bit": 16,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 65535
+        }
+      }
+    ]
+  },
+  "AEB:CFG_DBV": {
+    "nome": "CFG_DBV",
+    "num_bit": 7,
+    "range": 44,
+    "id": "7:44",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "DBV",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 6,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_PROJECT_AEB": {
+    "nome": "CFG_PROJECT_AEB",
+    "num_bit": 7,
+    "range": 16,
+    "id": "7:16",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 4,
+        "valor_range": 0
+      },
+      {
+        "nome": "PROJECT_NUMBER",
+        "num_bit": 20,
+        "valor_range": null
+      }
+    ]
+  },
+  "AEB:CFG_ESP_ASP": {
+    "nome": "CFG_ESP_ASP",
+    "num_bit": 7,
+    "range": 41,
+    "id": "7:41",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "ESP",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "ASP",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "ESP_DBV",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "ASP_DBV",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  },
+  "AEB:CFG_USP": {
+    "nome": "CFG_USP",
+    "num_bit": 7,
+    "range": 42,
+    "id": "7:42",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "USP_LOW",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "USP_HIGH",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  },
+  "AEB:CFG_MG": {
+    "nome": "CFG_MG",
+    "num_bit": 7,
+    "range": 43,
+    "id": "7:43",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "MG_SUPP",
+        "num_bit": 2,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "nome": "RESERVED",
+        "num_bit": 6,
+        "valor_range": 0
+      }
+    ]
+  },
+  "AEB:CFG_MG_VALUE": {
+    "nome": "CFG_MG_VALUE",
+    "num_bit": 7,
+    "range": 45,
+    "id": "7:45",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "MAX_DUR_OCC",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      },
+      {
+        "nome": "MG_SUPP_FACTOR",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  },
+  "AEB:CFG_FILTER": {
+    "nome": "CFG_FILTER",
+    "num_bit": 7,
+    "range": 49,
+    "id": "7:49",
+    "origem": "AEB",
+    "obrigatoria": false,
+    "entradas": [
+      {
+        "nome": "TYPE_PRTCT",
+        "num_bit": 1,
+        "valor_range": {
+          "tipo": "enum",
+          "valores": [
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "nome": "FILTER",
+        "num_bit": 8,
+        "valor_range": {
+          "tipo": "range",
+          "min": 0,
+          "max": 255
+        }
+      }
+    ]
+  }
+}

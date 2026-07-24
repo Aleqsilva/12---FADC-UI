@@ -34,7 +34,10 @@ class BancoDadosConfig:
             raise RuntimeError(f"Erro ao carregar o arquivo {arquivo_json}.")
 
     def obter_valores(self, cfg_name) -> Optional[dict]:
-        return self.bd_data[cfg_name]
+        try:
+            return self.bd_data[str(cfg_name)]
+        except KeyError:
+            raise ValueError(f"Configuração '{cfg_name}' não encontrada no banco de dados.")
 
 class TipoADC(Enum):
     AEB = "2"
@@ -42,10 +45,9 @@ class TipoADC(Enum):
 
 
 class Entrada:
-    def __init__(self, block: str, cfg: bool, keyword: str, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False, config_name: Optional[str] = ""):
+    def __init__(self, block: str, cfg: bool, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False, config_name: Optional[str] = ""):
         self.block = block
         self.cfg = cfg
-        self.keyword = keyword
         self.identificator = identificator
         self.num_bits = num_bits
         self.valor = valor
@@ -55,10 +57,11 @@ class Entrada:
         self.config_name = config_name
 
     def validar(self) -> bool:
-        pass
+        validador = Validador()
+        return validador.validar_config(self)
 
     def __repr__(self) -> str:
-        return f"Entrada(block={self.block!r}, cfg={self.cfg!r}, keyword={self.keyword!r}, identificator={self.identificator!r}, valor={self.valor!r}, num_bits={self.num_bits!r}, reserved={self.reserved!r}, comentario={self.comentario!r}, is_comment={self.is_comment!r})"
+        return f"Entrada(block={self.block!r}, cfg={self.cfg!r}, identificator={self.identificator!r}, valor={self.valor!r}, num_bits={self.num_bits!r}, reserved={self.reserved!r}, comentario={self.comentario!r}, is_comment={self.is_comment!r})"
     
     def to_dict(self) -> dict:
         return {
@@ -74,7 +77,7 @@ class ADCConfig:
         self.configs_dict = {}
         self.entradas: List[Entrada] = []
         self.protection = {
-            "COMPONENT": "",
+            "COMPONENT": ("108" if tipo == TipoADC.COM else "2"),
             "VERSION": "",
         }
 
@@ -83,7 +86,7 @@ class ADCConfig:
 
     def preenche_config_dict(self, config: ADCConfig, entrada: Entrada) -> None:
         if entrada.cfg:
-            chave = f"{config.tipo.name}:{entrada.keyword}"
+            chave = f"{config.tipo.name}:{entrada.identificator}"
             if chave not in self.configs_dict:
                 self.configs_dict[chave] = []
 
@@ -97,7 +100,7 @@ class ADCConfig:
 
     def config_to_dict(self, entrada, config) -> dict:
         return{
-                "nome": entrada.keyword,
+                "nome": entrada.identificator,
                 "num_bit": entrada.num_bits,
                 "range": entrada.valor,
                 "id": f"{entrada.num_bits}:{entrada.valor}",
@@ -114,92 +117,116 @@ class Validador:
         self.bd = BancoDadosConfig()
 
     def validar_config(self, config: ADCConfig) -> bool:
-        #TRATAMENTO PARA RESERVED
         for entrada in config.entradas:
-            if entrada.is_comment:
-                continue
+            if not self.valida_entrada(entrada, config):
+                return False
+        return True
 
-            entrada.validar()
-            # TESTE EM 3 CAMADAS: ID, CONFIG, PROTECTION
-            # TESTE PARA IDENTIFICATION
-            if entrada.block == "IDENTIFICATION":
-                if entrada.identificator == "ID":
-                    if entrada.num_bits != 12:
-                        raise ValueError(f"ID deve ter 12 bits, mas tem {entrada.num_bits}.")
-                    if entrada.valor != config.id:
-                        raise ValueError(f"ID do arquivo ({entrada.valor}) nao corresponde ao ID da configuracao ({config.id}).")
-                elif entrada.identificator == "CHANNEL":
-                    if entrada.num_bits != 4:
-                        raise ValueError(f"CHANNEL deve ter 4 bits, mas tem {entrada.num_bits}.")
-                    if entrada.valor != "0":
-                        raise ValueError(f"CHANNEL deve ser 0, mas tem {entrada.valor}.")
+    def valida_entrada(self, entrada: Entrada, config: ADCConfig) -> bool:
+        tipo_config = config.tipo.name.lower() if config.tipo == TipoADC.COM else config.tipo.name
+        if entrada.is_comment:
+            return True
+
+        identificator = entrada.identificator
+        numero_bits = entrada.num_bits
+        valor = entrada.valor
+        bloco = entrada.block
+        config_name = entrada.config_name
+
+        # TESTE EM 3 CAMADAS: ID, CONFIG, PROTECTION
+        # TESTE PARA IDENTIFICATION
+        if bloco == "IDENTIFICATION":
+            if identificator == "ID":
+                if numero_bits != 12:
+                    raise ValueError(f"ID deve ter 12 bits, mas tem {numero_bits}.")
+                if valor != config.id:
+                    raise ValueError(f"ID do arquivo ({valor}) nao corresponde ao ID da configuracao ({config.id}).")
+            elif identificator == "CHANNEL":
+                if numero_bits != 4:
+                    raise ValueError(f"CHANNEL deve ter 4 bits, mas tem {numero_bits}.")
+                if valor != "0":
+                    raise ValueError(f"CHANNEL deve ser 0, mas tem {valor}.")
+            else:
+                raise ValueError(f"Identificador desconhecido no bloco IDENTIFICATION: {identificator}")
+            
+        # TESTE PARA CONFIG
+        elif bloco == "CONFIG":
+            dict_referencia = self.bd.obter_valores(f"{tipo_config}:{(config_name if config_name else identificator)}")
+            if entrada.cfg:
+                conta_reserved = 0
+                if identificator != dict_referencia["nome"]:
+                    raise ValueError(f"Nome da entrada ({identificator}) nao corresponde ao nome de referencia ({dict_referencia['nome']}).")
+
+                if numero_bits != dict_referencia["num_bit"]:
+                    raise ValueError(f"Num bits ({numero_bits}) da entrada {identificator} nao corresponde ao num bits de referencia ({dict_referencia['num_bit']}).")
+
+                if dict_referencia["range"] and isinstance(dict_referencia["range"], dict):
+                    if dict_referencia["range"]["tipo"] == "range":
+                        if int(valor) < dict_referencia["range"]["min"] or int(valor) > dict_referencia["range"]["max"]:
+                            raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({dict_referencia['range']}).")
+                    elif dict_referencia["range"]["tipo"] == "enum":
+                        if int(valor) not in dict_referencia["range"]["valores"]:
+                            raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({dict_referencia['range']}).")    
                 else:
-                    raise ValueError(f"Identificador desconhecido no bloco IDENTIFICATION: {entrada.identificator}")
-            # TESTE PARA CONFIG
-            elif entrada.block == "CONFIG":
-                print("legit explodindo na linha abaixo")
-                print(f"{config.tipo.name}:{(entrada.config_name if entrada.config_name else entrada.keyword)}")
-                dict_referencia = self.bd.obter_valores(f"{config.tipo.name}:{(entrada.config_name if entrada.config_name else entrada.keyword)}")
-                print(dict_referencia)
-                if entrada.cfg:
-                    conta_reserved = 0
-                    if entrada.identificator != dict_referencia["nome"]:
-                        raise ValueError(f"Nome da entrada ({entrada.identificator}) nao corresponde ao nome de referencia ({dict_referencia['nome']}).")
-                    if entrada.num_bits != dict_referencia["num_bit"]:
-                        raise ValueError(f"Num bits ({entrada.num_bits}) da entrada {entrada.identificator} nao corresponde ao num bits de referencia ({dict_referencia['num_bit']}).")
-                    if isinstance(dict_referencia["range"], dict):
-                        if int(entrada.valor) < dict_referencia["range"]["min"] or int(entrada.valor) > dict_referencia["range"]["max"]:
-                            raise ValueError(f"Valor ({entrada.valor}) da entrada {entrada.identificator} esta fora do range de referencia ({dict_referencia['range']}).")
-                    else:
-                        if int(entrada.valor) != dict_referencia["range"]:
-                            raise ValueError(f"Valor da entrada ({entrada.valor}) nao corresponde ao valor de referencia ({dict_referencia['range']}).")
-                    if dict_referencia["origem"] != config.tipo.name:
-                        raise ValueError(f"Origem da entrada ({config.tipo.name}) nao corresponde a origem de referencia ({dict_referencia['origem']}).")
-                else:
-                    if entrada.reserved:
-                        candidatos = (e for e in dict_referencia["entradas"] if e["nome"] == entrada.identificator)
+                    if int(valor) != dict_referencia["range"]:
+                        raise ValueError(f"Valor da entrada ({valor}) nao corresponde ao valor de referencia ({dict_referencia['range']}).")
+
+                if dict_referencia["origem"] != tipo_config:
+                    raise ValueError(f"Origem da entrada ({tipo_config}) nao corresponde a origem de referencia ({dict_referencia['origem']}).")
+            else:
+                if entrada.reserved:
+                    candidatos = (e for e in dict_referencia["entradas"] if e["nome"] == identificator)
+                    if candidatos:
                         entrada_referencia = next(itertools.islice(candidatos, conta_reserved, None), None)
                         conta_reserved += 1
-                    else:
-                        entrada_referencia = next((e for e in dict_referencia["entradas"] if e["nome"] == entrada.identificator), None)
+                else:
+                    entrada_referencia = next((e for e in dict_referencia["entradas"] if e["nome"] == identificator), None)
 
-                    if entrada_referencia is None:
-                        raise ValueError(f"Entrada {entrada.identificator} nao encontrada na lista de referencias.")
-                    if entrada_referencia["num_bit"] != entrada.num_bits:
-                        raise ValueError(f"Num bits ({entrada.num_bits}) da entrada {entrada.identificator} nao corresponde ao num bits de referencia ({entrada_referencia['num_bit']}).")
-                    if entrada_referencia["valor_range"] and isinstance(entrada_referencia["valor_range"], dict):
-                        if entrada_referencia["valor_range"]["tipo"] == "range":
-                            if int(entrada.valor) < entrada_referencia["valor_range"]["min"] or int(entrada.valor) > entrada_referencia["valor_range"]["max"]:
-                                raise ValueError(f"Valor ({entrada.valor}) da entrada {entrada.identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
-                            elif entrada_referencia["valor_range"]["tipo"] == "enum":
-                                if int(entrada.valor) not in entrada_referencia["valor_range"]["valores"]:
-                                    raise ValueError(f"Valor ({entrada.valor}) da entrada {entrada.identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
-                    elif entrada_referencia["valor_range"]:
-                        if int(entrada.valor) != int(entrada_referencia["valor_range"]):
-                            raise ValueError(f"Valor da entrada ({entrada.valor}) nao corresponde ao valor de referencia ({entrada_referencia['valor_range']}).")
-                    elif not entrada_referencia["valor_range"]:
-                        pass
-                    else:
-                        raise ValueError(f"Valor de referencia nao definido para a entrada {entrada.identificator}.")
-            #TESTE PARA PROTECTION
-            elif entrada.block == "PROTECTION":
-                if entrada.identificator not in config.protection:
-                    raise ValueError(f"Identificador desconhecido no bloco PROTECTION: {entrada.identificator}")
-                if entrada.identificator == "COMPONENT":
-                    if entrada.num_bits != 8:
-                        raise ValueError(f"Num bits da entrada ({entrada.num_bits}) nao corresponde ao num bits de referencia (8).")
-                    if entrada.valor not in TipoADC._value2member_map_:
-                        raise ValueError(f"Valor da entrada ({entrada.valor}) esta fora do range de referencia.")
-                elif entrada.identificator == "VERSION":
-                    if entrada.num_bits != 48:
-                        raise ValueError(f"Num bits da entrada ({entrada.num_bits}) nao corresponde ao num bits de referencia (48).")
-                    if not entrada.valor.startswith("0x"):
-                        raise ValueError(f"Valor da entrada ({entrada.valor}) deve estar no formato hexadecimal (ex: 0x1A).")
-                    date = datetime.strptime(f"{entrada.valor.split('0x')[1]}", "%Y%m%d%H%M")
-                    if date > datetime.now():
-                        raise ValueError(f"Valor de VERSION ({entrada.valor}) nao pode ser maior que a data atual.")
-            else:
-                raise ValueError(f"Bloco desconhecido: {entrada.block}")
+                if entrada_referencia is None:
+                    raise ValueError(f"Entrada {identificator} nao encontrada na lista de referencias.")
+
+                if entrada_referencia["num_bit"] != numero_bits:
+                    raise ValueError(f"Num bits ({numero_bits}) da entrada {identificator} nao corresponde ao num bits de referencia ({entrada_referencia['num_bit']}).")
+
+                if entrada_referencia["valor_range"] and isinstance(entrada_referencia["valor_range"], dict):
+                    if entrada_referencia["valor_range"]["tipo"] == "range":
+                        if int(valor) < entrada_referencia["valor_range"]["min"] or int(valor) > entrada_referencia["valor_range"]["max"]:
+                            raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
+                        elif entrada_referencia["valor_range"]["tipo"] == "enum":
+                            if int(valor) not in entrada_referencia["valor_range"]["valores"]:
+                                raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
+
+                elif entrada_referencia["valor_range"]:
+                    if int(valor) != int(entrada_referencia["valor_range"]):
+                        raise ValueError(f"Valor da entrada ({valor}) nao corresponde ao valor de referencia ({entrada_referencia['valor_range']}).")
+
+                elif not entrada_referencia["valor_range"]:
+                    pass
+                else:
+                    raise ValueError(f"Valor de referencia nao definido para a entrada {identificator}.")
+                
+        #TESTE PARA PROTECTION
+        elif bloco == "PROTECTION":
+            if identificator not in config.protection:
+                raise ValueError(f"Identificador desconhecido no bloco PROTECTION: {identificator}")
+
+            if identificator == "COMPONENT":
+                if numero_bits != 8:
+                    raise ValueError(f"Num bits da entrada ({numero_bits}) nao corresponde ao num bits de referencia (8).")
+                if valor not in TipoADC._value2member_map_:
+                    raise ValueError(f"Valor da entrada ({valor}) esta fora do range de referencia.")
+
+            elif identificator == "VERSION":
+                if numero_bits != 48:
+                    raise ValueError(f"Num bits da entrada ({numero_bits}) nao corresponde ao num bits de referencia (48).")
+                if not valor.startswith("0x"):
+                    raise ValueError(f"Valor da entrada ({valor}) deve estar no formato hexadecimal (ex: 0x1A).")
+                date = datetime.strptime(f"{valor.split('0x')[1]}", "%Y%m%d%H%M")
+                if date > datetime.now():
+                    raise ValueError(f"Valor de VERSION ({valor}) nao pode ser maior que a data atual.")
+        else:
+            raise ValueError(f"Bloco desconhecido: {bloco}")
+        
 
 class ADCParser:
     def parse(self, arquivo: str) -> ADCConfig:
@@ -210,7 +237,7 @@ class ADCParser:
             raise ValueError("Arquivo vazio.")
 
         linha_ID = next((l for l in linhas if l.startswith("ID")), None)
-        
+
         if not linha_ID:
             raise ValueError("Arquivo sem identificador de configuracao.")
         
@@ -234,8 +261,8 @@ class ADCParser:
         for linha in linhas:
             if linha.startswith("//"):
                 comentario = linha.split("//", 1)[1].strip()
-                config.adicionar_entrada(Entrada(block="", cfg=False, keyword="", identificator="", valor=linha, num_bits="0", reserved=False, is_comment = True, comentario=comentario))
-                
+                config.adicionar_entrada(Entrada(block="", cfg=False, identificator="", valor=linha, num_bits="0", reserved=False, is_comment = True, comentario=comentario))
+
             if any(tag in linha for tag in ["[IDENTIFICATION]","[CONFIG]","[PROTECTION]"]):
                 block = re.search(r"\[(.*?)\]", linha).group(1)
                 esta_salvando = True
@@ -249,15 +276,15 @@ class ADCParser:
                 if "//" in linha:
                     comentario = linha.split("//", 1)[1].strip()
 
-                keyword, num_bits, valor = self.obtem_valores_linha(linha)
-                if keyword and num_bits and valor:
+                identificator, num_bits, valor = self.obtem_valores_linha(linha)
+                if identificator and num_bits and valor:
 
-                    if linha.startswith("CFG_"):
-                        cfg_name = keyword
+                    if linha.startswith("CFG_") and "CFG_GTWY_IP_B" not in identificator:
+                        cfg_name = identificator
                     elif linha.startswith("PROTECTION"):
                         cfg_name = None
-
-                    entrada = Entrada(block=block, cfg=True if linha.startswith("CFG_") else False, keyword=keyword, identificator=keyword, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None, config_name=cfg_name if not linha.startswith("CFG_") else None)
+                    #                                                              |           ÚNICA EXCEÇÃO            | 
+                    entrada = Entrada(block=block, cfg = linha.startswith("CFG_") and "CFG_GTWY_IP_B" not in identificator, identificator=identificator, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None, config_name=cfg_name if not linha.startswith("CFG_") or "CFG_GTWY_IP_B" in identificator else None)
                     config.adicionar_entrada(entrada)
                     if not entrada.is_comment and entrada.block == "CONFIG":
                         config.preenche_config_dict(config, entrada)
@@ -298,7 +325,7 @@ class ADCParser:
                     f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}{comment}\n")
         
     def obtem_valores_linha(self, linha) -> tuple[str, str, str]:
-        """Extrai os valores de uma linha do arquivo ADC e retorna como uma tupla (keyword, num_bits, valor)."""
+        """Extrai os valores de uma linha do arquivo ADC e retorna como uma tupla (identificator, num_bits, valor)."""
         if linha.startswith("//"):
             return ["", "", ""]
         
@@ -347,7 +374,7 @@ class ADCController:
     def carregar_arquivo(self, path: str) -> None:
         self._config = self._parser.parse(path)
         self._validador.validar_config(self._config)
-
+    
     def editar_entrada(self, identificator: str, valor: Any) -> None:
         self._garantir_config()
         entrada = self._config.obter_entrada(identificator)
@@ -492,9 +519,9 @@ class FormularioADC(tk.LabelFrame):
 
 
     def coletar_dados(self) -> dict[str, str]:
-        #for keyword, value in self._vars.items():
-        #    print(f"Coletando dados: {keyword} = {value}")
-        return {keyword: value for keyword, num_bit, value in self._vars.items()}
+        #for identificator, value in self._vars.items():
+        #    print(f"Coletando dados: {identificator} = {value}")
+        return {identificator: value for identificator, num_bit, value in self._vars.items()}
 
     def auto_fit_columns(self, treeview: ttk.Treeview) -> None:
         font = tkfont.nametofont("TkDefaultFont")

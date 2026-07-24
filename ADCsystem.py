@@ -11,10 +11,12 @@ import tkinter as tk
 import re
 import json
 
+from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from enum import Enum
 from typing import Any, List, Optional
 from matplotlib.pylab import rint
+import itertools
 
 # ═══════════════════════════════════════════════════════════
 # MODEL
@@ -22,12 +24,17 @@ from matplotlib.pylab import rint
 
 class BancoDadosConfig:
     def __init__(self):
+        self.bd_data = {}
+
         try:
             arquivo_json = "bd_config.json"
             with open(arquivo_json, 'r', encoding='utf-8') as file:
                 self.bd_data = json.load(file)
         except:
             raise RuntimeError(f"Erro ao carregar o arquivo {arquivo_json}.")
+
+    def obter_valores(self, cfg_name) -> Optional[dict]:
+        return self.bd_data[cfg_name]
 
 class TipoADC(Enum):
     AEB = "2"
@@ -48,14 +55,10 @@ class Entrada:
         self.config_name = config_name
 
     def validar(self) -> bool:
-        if self.reserved and self.valor != "0":
-            raise ValueError(f"Entrada '{self.identificator}' é reservada e não é 0.")
-        if self.valor is not None and not isinstance(self.valor, str):
-            raise TypeError(f"Entrada '{self.identificator}' deve ser do tipo str, mas recebeu {type(self.valor).__name__}.")
-        return True
+        pass
 
     def __repr__(self) -> str:
-        return f"{self.identificator!r}            {self.num_bits}:{self.valor!r}"
+        return f"Entrada(block={self.block!r}, cfg={self.cfg!r}, keyword={self.keyword!r}, identificator={self.identificator!r}, valor={self.valor!r}, num_bits={self.num_bits!r}, reserved={self.reserved!r}, comentario={self.comentario!r}, is_comment={self.is_comment!r})"
     
     def to_dict(self) -> dict:
         return {
@@ -111,10 +114,92 @@ class Validador:
         self.bd = BancoDadosConfig()
 
     def validar_config(self, config: ADCConfig) -> bool:
+        #TRATAMENTO PARA RESERVED
         for entrada in config.entradas:
-            entrada.validar()
-        return True
+            if entrada.is_comment:
+                continue
 
+            entrada.validar()
+            # TESTE EM 3 CAMADAS: ID, CONFIG, PROTECTION
+            # TESTE PARA IDENTIFICATION
+            if entrada.block == "IDENTIFICATION":
+                if entrada.identificator == "ID":
+                    if entrada.num_bits != 12:
+                        raise ValueError(f"ID deve ter 12 bits, mas tem {entrada.num_bits}.")
+                    if entrada.valor != config.id:
+                        raise ValueError(f"ID do arquivo ({entrada.valor}) nao corresponde ao ID da configuracao ({config.id}).")
+                elif entrada.identificator == "CHANNEL":
+                    if entrada.num_bits != 4:
+                        raise ValueError(f"CHANNEL deve ter 4 bits, mas tem {entrada.num_bits}.")
+                    if entrada.valor != "0":
+                        raise ValueError(f"CHANNEL deve ser 0, mas tem {entrada.valor}.")
+                else:
+                    raise ValueError(f"Identificador desconhecido no bloco IDENTIFICATION: {entrada.identificator}")
+            # TESTE PARA CONFIG
+            elif entrada.block == "CONFIG":
+                print("legit explodindo na linha abaixo")
+                print(f"{config.tipo.name}:{(entrada.config_name if entrada.config_name else entrada.keyword)}")
+                dict_referencia = self.bd.obter_valores(f"{config.tipo.name}:{(entrada.config_name if entrada.config_name else entrada.keyword)}")
+                print(dict_referencia)
+                if entrada.cfg:
+                    conta_reserved = 0
+                    if entrada.identificator != dict_referencia["nome"]:
+                        raise ValueError(f"Nome da entrada ({entrada.identificator}) nao corresponde ao nome de referencia ({dict_referencia['nome']}).")
+                    if entrada.num_bits != dict_referencia["num_bit"]:
+                        raise ValueError(f"Num bits ({entrada.num_bits}) da entrada {entrada.identificator} nao corresponde ao num bits de referencia ({dict_referencia['num_bit']}).")
+                    if isinstance(dict_referencia["range"], dict):
+                        if int(entrada.valor) < dict_referencia["range"]["min"] or int(entrada.valor) > dict_referencia["range"]["max"]:
+                            raise ValueError(f"Valor ({entrada.valor}) da entrada {entrada.identificator} esta fora do range de referencia ({dict_referencia['range']}).")
+                    else:
+                        if int(entrada.valor) != dict_referencia["range"]:
+                            raise ValueError(f"Valor da entrada ({entrada.valor}) nao corresponde ao valor de referencia ({dict_referencia['range']}).")
+                    if dict_referencia["origem"] != config.tipo.name:
+                        raise ValueError(f"Origem da entrada ({config.tipo.name}) nao corresponde a origem de referencia ({dict_referencia['origem']}).")
+                else:
+                    if entrada.reserved:
+                        candidatos = (e for e in dict_referencia["entradas"] if e["nome"] == entrada.identificator)
+                        entrada_referencia = next(itertools.islice(candidatos, conta_reserved, None), None)
+                        conta_reserved += 1
+                    else:
+                        entrada_referencia = next((e for e in dict_referencia["entradas"] if e["nome"] == entrada.identificator), None)
+
+                    if entrada_referencia is None:
+                        raise ValueError(f"Entrada {entrada.identificator} nao encontrada na lista de referencias.")
+                    if entrada_referencia["num_bit"] != entrada.num_bits:
+                        raise ValueError(f"Num bits ({entrada.num_bits}) da entrada {entrada.identificator} nao corresponde ao num bits de referencia ({entrada_referencia['num_bit']}).")
+                    if entrada_referencia["valor_range"] and isinstance(entrada_referencia["valor_range"], dict):
+                        if entrada_referencia["valor_range"]["tipo"] == "range":
+                            if int(entrada.valor) < entrada_referencia["valor_range"]["min"] or int(entrada.valor) > entrada_referencia["valor_range"]["max"]:
+                                raise ValueError(f"Valor ({entrada.valor}) da entrada {entrada.identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
+                            elif entrada_referencia["valor_range"]["tipo"] == "enum":
+                                if int(entrada.valor) not in entrada_referencia["valor_range"]["valores"]:
+                                    raise ValueError(f"Valor ({entrada.valor}) da entrada {entrada.identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
+                    elif entrada_referencia["valor_range"]:
+                        if int(entrada.valor) != int(entrada_referencia["valor_range"]):
+                            raise ValueError(f"Valor da entrada ({entrada.valor}) nao corresponde ao valor de referencia ({entrada_referencia['valor_range']}).")
+                    elif not entrada_referencia["valor_range"]:
+                        pass
+                    else:
+                        raise ValueError(f"Valor de referencia nao definido para a entrada {entrada.identificator}.")
+            #TESTE PARA PROTECTION
+            elif entrada.block == "PROTECTION":
+                if entrada.identificator not in config.protection:
+                    raise ValueError(f"Identificador desconhecido no bloco PROTECTION: {entrada.identificator}")
+                if entrada.identificator == "COMPONENT":
+                    if entrada.num_bits != 8:
+                        raise ValueError(f"Num bits da entrada ({entrada.num_bits}) nao corresponde ao num bits de referencia (8).")
+                    if entrada.valor not in TipoADC._value2member_map_:
+                        raise ValueError(f"Valor da entrada ({entrada.valor}) esta fora do range de referencia.")
+                elif entrada.identificator == "VERSION":
+                    if entrada.num_bits != 48:
+                        raise ValueError(f"Num bits da entrada ({entrada.num_bits}) nao corresponde ao num bits de referencia (48).")
+                    if not entrada.valor.startswith("0x"):
+                        raise ValueError(f"Valor da entrada ({entrada.valor}) deve estar no formato hexadecimal (ex: 0x1A).")
+                    date = datetime.strptime(f"{entrada.valor.split('0x')[1]}", "%Y%m%d%H%M")
+                    if date > datetime.now():
+                        raise ValueError(f"Valor de VERSION ({entrada.valor}) nao pode ser maior que a data atual.")
+            else:
+                raise ValueError(f"Bloco desconhecido: {entrada.block}")
 
 class ADCParser:
     def parse(self, arquivo: str) -> ADCConfig:
@@ -134,6 +219,12 @@ class ADCParser:
 
         if not config_id or not config_tipo:
             raise ValueError("Arquivo sem ID ou tipo ADC.")
+
+        if int(config_id) < 1 or int(config_id) > 4095:
+            raise ValueError("ID deve estar entre 1 e 4095.")
+
+        if config_tipo not in TipoADC:
+            raise ValueError(f"Tipo ADC desconhecido: {config_tipo}")
 
         config = ADCConfig(config_tipo, id=config_id)       
 
@@ -171,7 +262,7 @@ class ADCParser:
                     if not entrada.is_comment and entrada.block == "CONFIG":
                         config.preenche_config_dict(config, entrada)
 
-        print(json.dumps(config.configs_dict, indent=2))
+        #print(json.dumps(config.configs_dict, indent=2))
 
         return config
 
@@ -244,6 +335,7 @@ class ADCController:
         self._config:   Optional[ADCConfig] = None
         self._parser    = ADCParser()
         self._validador = Validador()
+        self._bd = BancoDadosConfig()
 
     @property
     def config(self) -> Optional[ADCConfig]:
@@ -287,11 +379,13 @@ class FormularioADC(tk.LabelFrame):
         super().__init__(parent, text="Entradas", padx=8, pady=8, **kw)
         self._controller = controller
         self._vars = {}
+        self._entrada_por_item: dict[str, Entrada] = {}
 
     def renderizar_campos(self, config: ADCConfig, comment_state: bool) -> None:
         for widget in self.winfo_children():
             widget.destroy()
         self._vars.clear()
+        self._entrada_por_item.clear()
 
         columns = ("Nome", "Num Bits", "Valor") + (("Comentário",) if comment_state else ())
         len_columns = len(columns)
@@ -316,7 +410,8 @@ class FormularioADC(tk.LabelFrame):
         for entrada in config.entradas:
             if entrada.is_comment:
                 if comment_state:
-                    treeview.insert("", "end", values=("","","", entrada.comentario), tags=("comment",))
+                    item_id = treeview.insert("", "end", values=("","","", entrada.comentario), tags=("comment",))
+                    self._entrada_por_item[item_id] = entrada
             else:
                 if entrada.block == "IDENTIFICATION":
 
@@ -325,7 +420,8 @@ class FormularioADC(tk.LabelFrame):
                         title_id = True
 
                     values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
-                    treeview.insert("", "end", values=values)
+                    item_id = treeview.insert("", "end", values=values)
+                    self._entrada_por_item[item_id] = entrada
 
                 elif entrada.block == "CONFIG":
 
@@ -337,9 +433,10 @@ class FormularioADC(tk.LabelFrame):
                     true_grey_false_white = not true_grey_false_white if entrada.cfg else true_grey_false_white
 
                     if entrada.cfg:
-                        treeview.insert("", "end", values=values, tags=("style_cfg_bold",) if true_grey_false_white else ("style_cfg_bold_white",))
+                        item_id = treeview.insert("", "end", values=values, tags=("style_cfg_bold",) if true_grey_false_white else ("style_cfg_bold_white",))
                     else:
-                        treeview.insert("", "end", values=values, tags=("grey/white",) if true_grey_false_white else ())
+                        item_id = treeview.insert("", "end", values=values, tags=("grey/white",) if true_grey_false_white else ())
+                    self._entrada_por_item[item_id] = entrada
 
                 elif entrada.block == "PROTECTION":
                     if not title_protection:
@@ -347,7 +444,8 @@ class FormularioADC(tk.LabelFrame):
                         title_protection = True
 
                     values = (entrada.identificator, entrada.num_bits, entrada.valor) + ((entrada.comentario,) if comment_state and entrada.comentario else ())
-                    treeview.insert("", "end", values=values)
+                    item_id = treeview.insert("", "end", values=values)
+                    self._entrada_por_item[item_id] = entrada
                 else:
                     raise ValueError(f"Bloco desconhecido: {entrada.block}")
 
@@ -385,7 +483,11 @@ class FormularioADC(tk.LabelFrame):
 
         text = treeview.item(rowid, "values")[int(column[1:]) - 1] if int(column[1:]) - 1 < len(treeview.item(rowid, "values")) else ""
 
-        self.entryPopup = EntryPopup(self, treeview, rowid, int(column[1:])-1, text)
+        entrada = self._entrada_por_item.get(rowid)
+        if entrada is None:
+            return
+
+        self.entryPopup = EntryPopup(self, treeview, rowid, int(column[1:])-1, text, entrada)
         self.entryPopup.place(x=x, y=y + pady, width=width, height=height, anchor="w")
 
 
@@ -409,11 +511,19 @@ class FormularioADC(tk.LabelFrame):
 
 
 class EntryPopup(tk.Entry):
-    def __init__(self, parent, treeview, iid, column, text, **kw):
+    COLUNA_PARA_ATRIBUTO = {
+        0: "identificator",
+        1: "num_bits",
+        2: "valor",
+        3: "comentario",
+    }
+
+    def __init__(self, parent, treeview, iid, column, text, entrada, **kw):
         super().__init__(parent, **kw)
         self.tv = treeview
         self.iid = iid
         self.column = column
+        self.entrada = entrada
 
         self.insert(0, text)
         self['exportselection'] = False
@@ -424,16 +534,35 @@ class EntryPopup(tk.Entry):
         self.bind("<Escape>", lambda e: self.destroy())
 
     def on_return(self, event):
-        vals = list(self.tv.item(self.iid, "values"))
-        if len(vals) <= self.column:
-            vals.extend([""] * (self.column - len(vals) + 1))
-        vals[self.column] = self.get()
-        self.tv.item(self.iid, values=vals)
-        self.destroy()
+        self.salvar()
 
     def select_all(self, *ignore):
         self.selection_range(0, tk.END)
         return 'break'
+
+    def salvar(self, event=None):
+        novo_valor = self.get()
+        atributo = self.COLUNA_PARA_ATRIBUTO.get(self.column)
+
+        if atributo is None:
+            self.destroy()
+            return
+
+        valor_anterior = getattr(self.entrada, atributo)
+        setattr(self.entrada, atributo, novo_valor)
+
+        try:
+            self.entrada.validar()
+        except Exception as exc:
+            # Reverte a alteração se a entrada ficar inválida
+            setattr(self.entrada, atributo, valor_anterior)
+            messagebox.showerror("Valor inválido", str(exc))
+            self.destroy()
+            return
+
+        # Só reflete na treeview depois que a entrada foi validada e atualizada
+        self.tv.set(self.iid, self.column, novo_valor)
+        self.destroy()
 
 # ═══════════════════════════════════════════════════════════
 # VIEW — MainView

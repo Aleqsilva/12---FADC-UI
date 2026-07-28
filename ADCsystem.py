@@ -22,6 +22,11 @@ import itertools
 # MODEL
 # ═══════════════════════════════════════════════════════════
 
+class SessionConfig:
+    def __init__(self):
+        self.configs: List[ADCConfig] = []
+        self.configs_dict = {}
+
 class BancoDadosConfig:
     def __init__(self):
         self.bd_data = {}
@@ -45,7 +50,8 @@ class TipoADC(Enum):
 
 
 class Entrada:
-    def __init__(self, block: str, cfg: bool, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False, config_name: Optional[str] = ""):
+    def __init__(self, config, block: str, cfg: bool, identificator: str, valor: Any, num_bits: str, reserved: bool = False, comentario: Optional[str] = None, is_comment: bool = False, config_name: Optional[str] = ""):
+        self.config = config
         self.block = block
         self.cfg = cfg
         self.identificator = identificator
@@ -58,7 +64,7 @@ class Entrada:
 
     def validar(self) -> bool:
         validador = Validador()
-        return validador.validar_config(self)
+        return validador.valida_entrada(self, self.config)
 
     def __repr__(self) -> str:
         return f"Entrada(block={self.block!r}, cfg={self.cfg!r}, identificator={self.identificator!r}, valor={self.valor!r}, num_bits={self.num_bits!r}, reserved={self.reserved!r}, comentario={self.comentario!r}, is_comment={self.is_comment!r})"
@@ -192,16 +198,18 @@ class Validador:
                     if entrada_referencia["valor_range"]["tipo"] == "range":
                         if int(valor) < entrada_referencia["valor_range"]["min"] or int(valor) > entrada_referencia["valor_range"]["max"]:
                             raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
-                        elif entrada_referencia["valor_range"]["tipo"] == "enum":
-                            if int(valor) not in entrada_referencia["valor_range"]["valores"]:
-                                raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
+                    elif entrada_referencia["valor_range"]["tipo"] == "enum":
+                        if int(valor) not in entrada_referencia["valor_range"]["valores"]:
+                            raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia ({entrada_referencia['valor_range']}).")
 
                 elif entrada_referencia["valor_range"]:
                     if int(valor) != int(entrada_referencia["valor_range"]):
                         raise ValueError(f"Valor da entrada ({valor}) nao corresponde ao valor de referencia ({entrada_referencia['valor_range']}).")
 
                 elif not entrada_referencia["valor_range"]:
-                    pass
+                    if int(valor) > 2**int(entrada_referencia["num_bit"]) - 1:
+                        raise ValueError(f"Valor ({valor}) da entrada {identificator} esta fora do range de referencia (0 a {2**int(entrada_referencia['num_bit']) - 1}).")
+
                 else:
                     raise ValueError(f"Valor de referencia nao definido para a entrada {identificator}.")
                 
@@ -261,7 +269,7 @@ class ADCParser:
         for linha in linhas:
             if linha.startswith("//"):
                 comentario = linha.split("//", 1)[1].strip()
-                config.adicionar_entrada(Entrada(block="", cfg=False, identificator="", valor=linha, num_bits="0", reserved=False, is_comment = True, comentario=comentario))
+                config.adicionar_entrada(Entrada(config, block="", cfg=False, identificator="", valor=linha, num_bits="0", reserved=False, is_comment = True, comentario=comentario))
 
             if any(tag in linha for tag in ["[IDENTIFICATION]","[CONFIG]","[PROTECTION]"]):
                 block = re.search(r"\[(.*?)\]", linha).group(1)
@@ -284,12 +292,10 @@ class ADCParser:
                     elif linha.startswith("PROTECTION"):
                         cfg_name = None
                     #                                                              |           ÚNICA EXCEÇÃO            | 
-                    entrada = Entrada(block=block, cfg = linha.startswith("CFG_") and "CFG_GTWY_IP_B" not in identificator, identificator=identificator, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None, config_name=cfg_name if not linha.startswith("CFG_") or "CFG_GTWY_IP_B" in identificator else None)
+                    entrada = Entrada(config, block=block, cfg = linha.startswith("CFG_") and "CFG_GTWY_IP_B" not in identificator, identificator=identificator, valor=valor, num_bits=int(num_bits), reserved=True if linha.startswith("RESERVED") else False, is_comment=False, comentario=comentario if "//" in linha else None, config_name=cfg_name if not linha.startswith("CFG_") or "CFG_GTWY_IP_B" in identificator else None)
                     config.adicionar_entrada(entrada)
                     if not entrada.is_comment and entrada.block == "CONFIG":
                         config.preenche_config_dict(config, entrada)
-
-        #print(json.dumps(config.configs_dict, indent=2))
 
         return config
 
@@ -363,6 +369,7 @@ class ADCController:
         self._parser    = ADCParser()
         self._validador = Validador()
         self._bd = BancoDadosConfig()
+        self._sessao = SessionConfig()
 
     @property
     def config(self) -> Optional[ADCConfig]:
@@ -370,6 +377,9 @@ class ADCController:
 
     def criar_config(self, tipo: TipoADC) -> None:
         self._config = ADCFactory.criar_config(tipo)
+
+    def criar_sessao(self) -> None:
+        self._sessao = SessionConfig()
 
     def carregar_arquivo(self, path: str) -> None:
         self._config = self._parser.parse(path)
@@ -587,7 +597,6 @@ class EntryPopup(tk.Entry):
             self.destroy()
             return
 
-        # Só reflete na treeview depois que a entrada foi validada e atualizada
         self.tv.set(self.iid, self.column, novo_valor)
         self.destroy()
 
@@ -616,6 +625,7 @@ class MainView:
 
         for label, cmd in [
             ("Nova config",     self._on_nova_config),
+            ("Nova sessão", self._on_nova_sessao),
             ("Abrir arquivo",   self._on_abrir),
             ("Salvar",          self._on_salvar),
             ("Aplicar edicoes", self._on_aplicar),
@@ -652,6 +662,8 @@ class MainView:
         self._form = FormularioADC(central, self._controller, bg="#f0f0f0")
         self._form.pack(fill="both", expand=True)
 
+        
+
         tk.Label(
             self._root, textvariable=self._status_var,
             anchor="w", bg="#dde3ec", fg="#333",
@@ -674,6 +686,11 @@ class MainView:
         self._id_var.set(config.id or "—")
         self._tipo_var.set(config.tipo.name)
         self._form.renderizar_campos(config, self.toggle_var.get())
+
+    def _on_nova_sessao(self) -> None:
+        self._controller.criar_sessao()
+        self.mostrar_config()
+        self._status("Nova sessão criada.")
 
     def _on_nova_config(self) -> None:
         dialog = _DialogNovaConfig(self._root)

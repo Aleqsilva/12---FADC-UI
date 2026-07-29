@@ -57,6 +57,9 @@ class SessionConfig:
     def listar(self) -> list[ADCConfig]:
         return list(self._configs.values())
 
+    def esta_vazia(self) -> bool:
+        return not self._configs
+
 class BancoDadosConfig:
     def __init__(self):
         self.bd_data = {}
@@ -394,8 +397,8 @@ class ADCParser:
 
 class ADCFactory:
     @staticmethod
-    def criar_config(tipo: TipoADC) -> ADCConfig:
-        return ADCConfig(tipo=tipo)
+    def criar_config(tipo: TipoADC, id: str) -> ADCConfig:
+        return ADCConfig(tipo=tipo, id=id)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -411,29 +414,53 @@ class ADCController:
         self._sessao = SessionConfig()
 
     @property
-    def config(self) -> Optional[ADCConfig]:
-        return self._config
+    def sessao(self) -> Optional[SessionConfig]:
+        return self._sessao
+
+    def _garantir_sessao(self) -> SessionConfig:
+        if self._sessao is None:
+            self._sessao = SessionConfig()
+        return self._sessao
+
+    def encerrar_sessao(self) -> None:
+        self._sessao = None
+        self._config = None
+
+    def criar_id_unico(self, tipo: TipoADC) -> str:
+        ids_existentes = {c.id for c in self._sessao.listar()} if self._sessao else set()
+        for i in range(1, 4096):
+            id_str = str(i)
+            if id_str not in ids_existentes:
+                return id_str
+        raise RuntimeError("Nao ha IDs disponiveis.")
 
     def criar_config(self, tipo: TipoADC) -> None:
-        self._config = ADCFactory.criar_config(tipo)
-
-    def criar_sessao(self) -> None:
-        self._sessao.clear()
-        self._sessao = SessionConfig()
+        id = self.criar_id_unico(tipo)
+        config = ADCFactory.criar_config(tipo, id)
+        print(config)
+        sessao = self._garantir_sessao()
+        sessao.adicionar_config(config) 
+        self._config = config
 
     def carregar_arquivo(self, path: str) -> None:
         config = self._parser.parse(path)
         self._validador.validar_config(config)
-        self._sessao.adicionar_config(config)
-        self._sessao.selecionar(config.id)
+        sessao = self._garantir_sessao()
+        sessao.adicionar_config(config)
         self._config = config
 
     def trocar_config(self, id: str) -> None:
+        if self._sessao is None:
+            raise RuntimeError("Nenhuma sessão ativa.")
         self._config = self._sessao.selecionar(id)
 
     def remover_config(self, id: str) -> None:
+        if self._sessao is None:
+            return
         self._sessao.remover_config(id)
         self._config = self._sessao.ativo
+        if self._sessao.esta_vazia():
+            self._sessao = None
         
     def editar_entrada(self, identificator: str, valor: Any) -> None:
         self._garantir_config()
@@ -669,7 +696,7 @@ class MainView:
         self._root.mainloop()
 
     def _construir_ui(self) -> None:
-        self.atualiza_sessoes(self._root)
+        self.atualiza_sessoes()
 
         toolbar = tk.Frame(self._root, bg="#dde3ec", pady=4)
         toolbar.pack(fill="x")
@@ -677,7 +704,7 @@ class MainView:
         for label, cmd in [
             ("Nova config",     self._on_nova_config),
             ("Nova sessão", self._on_nova_sessao),
-            ("Abrir arquivo",   self._on_abrir),
+            ("Abrir config",   self._on_abrir),
             ("Salvar",          self._on_salvar),
             ("Aplicar edicoes", self._on_aplicar),
         ]:
@@ -748,7 +775,7 @@ class MainView:
         self._form.renderizar_campos(config, self.toggle_var.get())
 
     def _on_nova_sessao(self) -> None:
-        self._controller.criar_sessao()
+        self._controller.encerrar_sessao()
         self.mostrar_config()
         self._status("Nova sessão criada.")
 
@@ -758,7 +785,8 @@ class MainView:
         if tipo is None:
             return
         try:
-            self._controller.criar_config(tipo)
+            id = self._controller.criar_id_unico(tipo)
+            self._controller.criar_config(tipo, id)
             self.mostrar_config()
             self._status("Nova configuracao criada.")
         except Exception as exc:
@@ -772,8 +800,9 @@ class MainView:
         if not path:
             return
         try:
-            self._controller.criar_sessao()
             self._controller.carregar_arquivo(path)
+            self._controller.encerrar_sessao()
+            print(self._controller._config)
             self.mostrar_config()
             self._status(f"Carregado: {path.split('/')[-1]}")
         except Exception as exc:

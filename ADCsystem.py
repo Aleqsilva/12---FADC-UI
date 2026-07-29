@@ -24,8 +24,38 @@ import itertools
 
 class SessionConfig:
     def __init__(self):
-        self.configs: List[ADCConfig] = []
-        self.configs_dict = {}
+        self._configs = {}
+        self._ativo = None
+
+    def adicionar_config(self, config: ADCConfig) -> None:
+        chave = config.id
+        if chave in self._configs:
+            raise ValueError(f"Config {chave} já carregada nesta sessão.")
+        self._configs[chave] = config
+        self._ativo = chave
+
+    def clear(self) -> None:
+        self._configs.clear()
+        self._ativo = None
+
+    def remover_config(self, tipo: TipoADC, id: str) -> None:
+        self._configs.pop(id, None)
+        if self._ativo == id:
+            self._ativo = next(iter(self._configs), None)
+
+    def selecionar(self, id: str) -> ADCConfig:
+        chave = id
+        if chave not in self._configs:
+            raise KeyError(f"Config {chave} não está na sessão.")
+        self._ativo = chave
+        return self._configs[chave]
+
+    @property
+    def ativo(self) -> Optional[ADCConfig]:
+        return self._configs.get(self._ativo)
+
+    def listar(self) -> list[ADCConfig]:
+        return list(self._configs.values())
 
 class BancoDadosConfig:
     def __init__(self):
@@ -63,8 +93,7 @@ class Entrada:
         self.config_name = config_name
 
     def validar(self) -> bool:
-        validador = Validador()
-        return validador.valida_entrada(self, self.config)
+        return Validador.valida_entrada(self, self.config)
 
     def __repr__(self) -> str:
         return f"Entrada(block={self.block!r}, cfg={self.cfg!r}, identificator={self.identificator!r}, valor={self.valor!r}, num_bits={self.num_bits!r}, reserved={self.reserved!r}, comentario={self.comentario!r}, is_comment={self.is_comment!r})"
@@ -119,16 +148,16 @@ class ADCConfig:
 
 
 class Validador:
-    def __init__(self):
-        self.bd = BancoDadosConfig()
+    bd = BancoDadosConfig()
 
     def validar_config(self, config: ADCConfig) -> bool:
         for entrada in config.entradas:
-            if not self.valida_entrada(entrada, config):
+            if not Validador.valida_entrada(entrada, config):
                 return False
         return True
 
-    def valida_entrada(self, entrada: Entrada, config: ADCConfig) -> bool:
+    @staticmethod
+    def valida_entrada(entrada: Entrada, config: ADCConfig) -> bool:
         tipo_config = config.tipo.name.lower() if config.tipo == TipoADC.COM else config.tipo.name
         if entrada.is_comment:
             return True
@@ -157,7 +186,7 @@ class Validador:
             
         # TESTE PARA CONFIG
         elif bloco == "CONFIG":
-            dict_referencia = self.bd.obter_valores(f"{tipo_config}:{(config_name if config_name else identificator)}")
+            dict_referencia = Validador.bd.obter_valores(f"{tipo_config}:{(config_name if config_name else identificator)}")
             if entrada.cfg:
                 conta_reserved = 0
                 if identificator != dict_referencia["nome"]:
@@ -234,7 +263,18 @@ class Validador:
                     raise ValueError(f"Valor de VERSION ({valor}) nao pode ser maior que a data atual.")
         else:
             raise ValueError(f"Bloco desconhecido: {bloco}")
-        
+
+    def validar_sessao(self, sessao: SessionConfig) -> list[str]:
+        avisos = []
+        ids_carregados = {(c.tipo, c.id) for c in sessao.listar()}
+        for config in sessao.listar():
+            for e in config.entradas:
+                if e.identificator == "ID" and e.block == "CONFIG":
+                    # é referência a AEB adjacente, não ao próprio ID
+                    if (TipoADC.AEB, e.valor) not in ids_carregados:
+                        avisos.append(f"{config.id}: referencia AEB {e.valor} não carregado na sessão")
+        return avisos
+  
 
 class ADCParser:
     def parse(self, arquivo: str) -> ADCConfig:
@@ -296,7 +336,6 @@ class ADCParser:
                     config.adicionar_entrada(entrada)
                     if not entrada.is_comment and entrada.block == "CONFIG":
                         config.preenche_config_dict(config, entrada)
-
         return config
 
     def gerar(self, config: ADCConfig, arquivo: str) -> None:
@@ -379,12 +418,23 @@ class ADCController:
         self._config = ADCFactory.criar_config(tipo)
 
     def criar_sessao(self) -> None:
+        self._sessao.clear()
         self._sessao = SessionConfig()
 
     def carregar_arquivo(self, path: str) -> None:
-        self._config = self._parser.parse(path)
-        self._validador.validar_config(self._config)
-    
+        config = self._parser.parse(path)
+        self._validador.validar_config(config)
+        self._sessao.adicionar_config(config)
+        self._sessao.selecionar(config.id)
+        self._config = config
+
+    def trocar_config(self, id: str) -> None:
+        self._config = self._sessao.selecionar(id)
+
+    def remover_config(self, id: str) -> None:
+        self._sessao.remover_config(id)
+        self._config = self._sessao.ativo
+        
     def editar_entrada(self, identificator: str, valor: Any) -> None:
         self._garantir_config()
         entrada = self._config.obter_entrada(identificator)
@@ -492,7 +542,6 @@ class FormularioADC(tk.LabelFrame):
         treeview.tag_configure("style_cfg_bold", font=("Segoe UI", 9, "bold"), background="#a5a2a2")
         treeview.tag_configure("style_cfg_bold_white", font=("Segoe UI", 9, "bold"), background="#ffffff")
         treeview.tag_configure("comment", font=("Segoe UI", 9), foreground="#6A9955")
-
 
         if comment_state:
             self.auto_fit_columns(treeview)
@@ -620,6 +669,8 @@ class MainView:
         self._root.mainloop()
 
     def _construir_ui(self) -> None:
+        self.atualiza_sessoes(self._root)
+
         toolbar = tk.Frame(self._root, bg="#dde3ec", pady=4)
         toolbar.pack(fill="x")
 
@@ -662,7 +713,16 @@ class MainView:
         self._form = FormularioADC(central, self._controller, bg="#f0f0f0")
         self._form.pack(fill="both", expand=True)
 
-        
+    def atualiza_sessoes(self) -> None:
+        sidebar = tk.Frame(self._root, bg="#dde3ec", padx=8, pady=8)
+        sidebar.pack(fill="y", side="left")
+
+        for sessions in [("Sessão atual", self._controller._sessao.ativo)]:
+            tk.Label(sidebar, text=sessions[0], bg="#dde3ec",
+                     font=("Segoe UI", 9, "bold")).pack(side="left")
+            tk.Label(sidebar, textvariable=tk.StringVar(value=sessions[1].id if sessions[1] else "—"), bg="#dde3ec",
+                     fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=(4, 16))
+            
 
         tk.Label(
             self._root, textvariable=self._status_var,
@@ -712,6 +772,7 @@ class MainView:
         if not path:
             return
         try:
+            self._controller.criar_sessao()
             self._controller.carregar_arquivo(path)
             self.mostrar_config()
             self._status(f"Carregado: {path.split('/')[-1]}")

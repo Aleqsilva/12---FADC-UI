@@ -22,6 +22,8 @@ import itertools
 # MODEL
 # ═══════════════════════════════════════════════════════════
 
+
+
 class SessionConfig:
     def __init__(self):
         self._configs = {}
@@ -59,6 +61,9 @@ class SessionConfig:
 
     def esta_vazia(self) -> bool:
         return not self._configs
+
+    def __repr__(self) -> str:
+        return f"SessionConfig(ativo={self._ativo}, configs={list(self._configs.keys())})"
 
 class BancoDadosConfig:
     def __init__(self):
@@ -267,17 +272,6 @@ class Validador:
         else:
             raise ValueError(f"Bloco desconhecido: {bloco}")
 
-    def validar_sessao(self, sessao: SessionConfig) -> list[str]:
-        avisos = []
-        ids_carregados = {(c.tipo, c.id) for c in sessao.listar()}
-        for config in sessao.listar():
-            for e in config.entradas:
-                if e.identificator == "ID" and e.block == "CONFIG":
-                    # é referência a AEB adjacente, não ao próprio ID
-                    if (TipoADC.AEB, e.valor) not in ids_carregados:
-                        avisos.append(f"{config.id}: referencia AEB {e.valor} não carregado na sessão")
-        return avisos
-  
 
 class ADCParser:
     def parse(self, arquivo: str) -> ADCConfig:
@@ -430,16 +424,7 @@ class ADCController:
         self._sessao = None
         self._config = None
 
-    def criar_id_unico(self, tipo: TipoADC) -> str:
-        ids_existentes = {c.id for c in self._sessao.listar()} if self._sessao else set()
-        for i in range(1, 4096):
-            id_str = str(i)
-            if id_str not in ids_existentes:
-                return id_str
-        raise RuntimeError("Nao ha IDs disponiveis.")
-
-    def criar_config(self, tipo: TipoADC) -> None:
-        id = self.criar_id_unico(tipo)
+    def criar_config(self, tipo: TipoADC, id) -> None:
         config = ADCFactory.criar_config(tipo, id)
         sessao = self._garantir_sessao()
         sessao.adicionar_config(config) 
@@ -699,6 +684,18 @@ class MainView:
         self._root.mainloop()
 
     def _construir_ui(self) -> None:
+        sidebar = tk.Frame(self._root, bg="#dde3ec", padx=8, pady=8)
+        sidebar.pack(fill="y", side="left")
+
+        self.lista = tk.Listbox(sidebar, height=5, bg="#f0f0f0", font=("Segoe UI", 9))
+        tk.Label(sidebar, text="Configurações", bg="#dde3ec", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+
+        tk.Label(
+            self._root, textvariable=self._status_var,
+            anchor="w", bg="#dde3ec", fg="#333",
+            font=("Segoe UI", 8), relief="sunken",
+        ).pack(fill="x", side="bottom")
+
         self.atualiza_sessoes()
 
         toolbar = tk.Frame(self._root, bg="#dde3ec", pady=4)
@@ -743,22 +740,91 @@ class MainView:
         self._form = FormularioADC(central, self._controller, bg="#f0f0f0")
         self._form.pack(fill="both", expand=True)
 
+        lbf = tk.LabelFrame(central, text="Endereçamento", bg="#f0f0f0", font=("Segoe UI", 9, "bold"))
+        lbf.pack(fill="both", expand=True, padx=10, pady=10)
+
+        campos = [
+            "IP1 ",
+            "IP2",
+            "MÁSCARA",
+            "DEFAULT GW",
+        ]
+
+        for linha, texto in enumerate(campos):
+            ttk.Label(lbf, text=texto).grid(row=linha, column=0, sticky="w", padx=4)
+            ttk.Entry(lbf, width=20, state="disabled").grid(row=linha, column=1, sticky="ew", padx=4)
+
+        frame_tabela = ttk.Frame(lbf, relief="solid", borderwidth=1)
+        frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
+
+        ttk.Label(
+            frame_tabela,
+            text="FDS",
+            width=10,
+            anchor="center"
+        ).grid(row=0, column=0, sticky="nsew")
+
+
+        # ISSO DEVE VIRAR UM FOR PARA TODOS OS FDS' CONECTADOS
+        ttk.Label(
+            frame_tabela,
+            text="IPs dos FDS' que receberão\ninformação da placa COM",
+            relief="groove",
+            anchor="center"
+        ).grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+
+        ttk.Label(
+            frame_tabela,
+            text="FADC",
+            width=10,
+            anchor="center"
+        ).grid(row=1, column=0, sticky="nsew")
+
+        # ISSO DEVE VIRAR UM FOR PARA TODOS OS IPS QUE ENVIAM INFORMAÇÃO
+        ttk.Label(
+            frame_tabela,
+            text="IDs das AEBs que receberão\ndados de contagem relacionados\naos IPs de FADC",
+            relief="groove",
+            anchor="center"
+        ).grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
+
+        # Ajuste de expansão
+        lbf.columnconfigure(1, weight=1)
+        frame_tabela.columnconfigure(1, weight=1)
+
+        self.atualiza_dados_encaminhamento()
+
+    def atualiza_dados_encaminhamento(self) -> None:
+        pass
+
+
     def atualiza_sessoes(self) -> None:
-        sidebar = tk.Frame(self._root, bg="#dde3ec", padx=8, pady=8)
-        sidebar.pack(fill="y", side="left")
+        self.lista.delete(0, tk.END)
+        sessoes = self._controller.sessao._configs if self._controller._sessao else {}
 
-        for sessions in [("Sessão atual", self._controller._sessao.ativo)]:
-            tk.Label(sidebar, text=sessions[0], bg="#dde3ec",
-                     font=("Segoe UI", 9, "bold")).pack(side="left")
-            tk.Label(sidebar, textvariable=tk.StringVar(value=sessions[1].id if sessions[1] else "—"), bg="#dde3ec",
-                     fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=(4, 16))
-            
+        for _, configs in [("Sessão atual", sessoes)]:
+            if configs:
+                for session_id in configs:
+                    self.lista.insert(tk.END, session_id)
+            else:
+                self.lista.insert(tk.END, "—")
 
-        tk.Label(
-            self._root, textvariable=self._status_var,
-            anchor="w", bg="#dde3ec", fg="#333",
-            font=("Segoe UI", 8), relief="sunken",
-        ).pack(fill="x", side="bottom")
+        self.lista.pack(fill="both", expand=True, pady=(8, 0))
+
+    def on_double_click_sessao(self, event) -> None:
+        selection = self.lista.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        session_id = self.lista.get(index)
+        if session_id == "—":
+            return
+        try:
+            self._controller.trocar_config(session_id)
+            self.mostrar_config()
+            self._status(f"Sessão ativa: {session_id}")
+        except Exception as exc:
+            self._erro(exc)
 
     def toggle_comentarios(self) -> None:
         if self._form is None or self._controller.config is None:
@@ -768,6 +834,7 @@ class MainView:
     def bind_eventos(self) -> None:
         self._root.bind("<Control-o>", lambda _e: self._on_abrir())
         self._root.bind("<Control-s>", lambda _e: self._on_salvar())
+        self.lista.bind("<Double-Button-1>", self.on_double_click_sessao)
 
     def mostrar_config(self) -> None:
         config = self._controller.config
@@ -778,8 +845,12 @@ class MainView:
         self._form.renderizar_campos(config, self.toggle_var.get())
 
     def _on_nova_sessao(self) -> None:
+        response = messagebox.askyesno("Confirmação", "Sua sessão atual será encerrada. Deseja continuar?")
+        if not response:
+            return
         self._controller.encerrar_sessao()
         self.mostrar_config()
+        self.atualiza_sessoes()
         self._status("Nova sessão criada.")
 
     def _on_nova_config(self) -> None:
@@ -787,10 +858,14 @@ class MainView:
         tipo = dialog.resultado
         if tipo is None:
             return
+        id = dialog.id
+        if id is None or not id.isdigit() or int(id) < 1 or int(id) > 4095:
+            messagebox.showerror("Erro", "ID inválido. Deve ser um número entre 1 e 4095.")
+            return
         try:
-            id = self._controller.criar_id_unico(tipo)
             self._controller.criar_config(tipo, id)
             self.mostrar_config()
+            self.atualiza_sessoes()
             self._status("Nova configuracao criada.")
         except Exception as exc:
             self._erro(exc)
@@ -805,6 +880,7 @@ class MainView:
         try:
             self._controller.carregar_arquivo(path)
             self.mostrar_config()
+            self.atualiza_sessoes()
             self._status(f"Carregado: {path.split('/')[-1]}")
         except Exception as exc:
             self._erro(exc)
@@ -828,8 +904,9 @@ class MainView:
 
     def _on_aplicar(self) -> None:
         if self._form is None or self._controller.config is None:
-            print("Nenhuma configuracao carregada para aplicar.")
+            self._status("Nenhuma configuracao carregada para aplicar.")
             return
+        self.atualiza_sessoes()
         dados = self._form.coletar_dados()
         erros = []
         for nome, val_str in dados.items():
@@ -872,12 +949,20 @@ class _DialogNovaConfig(tk.Toplevel):
         for membro in TipoADC:
             tk.Radiobutton(self, text=membro.name, variable=self._var,
                            value=membro.name).pack(anchor="w", padx=24)
+            
+        tk.Label(self, text="Digite um ID:", padx=16, pady=12).pack()
+        self._id_var = tk.StringVar()
+        tk.Entry(self, textvariable=self._id_var).pack(pady=(0, 12), padx=16, fill="x")
+
         tk.Button(self, text="Criar", command=self._confirmar,
                   bg="#4a6fa5", fg="white", padx=10, pady=4).pack(pady=12)
+
+        
         self.wait_window()
 
     def _confirmar(self) -> None:
         self.resultado = TipoADC[self._var.get()]
+        self.id = self._id_var.get()
         self.destroy()
 
 

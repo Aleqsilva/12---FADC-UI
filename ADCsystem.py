@@ -38,7 +38,7 @@ class SessionConfig:
         self._configs.clear()
         self._ativo = None
 
-    def remover_config(self, tipo: TipoADC, id: str) -> None:
+    def remover_config(self, id: str) -> None:
         self._configs.pop(id, None)
         if self._ativo == id:
             self._ativo = next(iter(self._configs), None)
@@ -417,6 +417,10 @@ class ADCController:
     def sessao(self) -> Optional[SessionConfig]:
         return self._sessao
 
+    @property
+    def config(self) -> Optional[ADCConfig]:
+        return self._config
+
     def _garantir_sessao(self) -> SessionConfig:
         if self._sessao is None:
             self._sessao = SessionConfig()
@@ -437,7 +441,6 @@ class ADCController:
     def criar_config(self, tipo: TipoADC) -> None:
         id = self.criar_id_unico(tipo)
         config = ADCFactory.criar_config(tipo, id)
-        print(config)
         sessao = self._garantir_sessao()
         sessao.adicionar_config(config) 
         self._config = config
@@ -801,8 +804,6 @@ class MainView:
             return
         try:
             self._controller.carregar_arquivo(path)
-            self._controller.encerrar_sessao()
-            print(self._controller._config)
             self.mostrar_config()
             self._status(f"Carregado: {path.split('/')[-1]}")
         except Exception as exc:

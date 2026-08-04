@@ -17,12 +17,142 @@ from enum import Enum
 from typing import Any, List, Optional
 from matplotlib.pylab import rint
 import itertools
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Optional
 
 # ═══════════════════════════════════════════════════════════
 # MODEL
 # ═══════════════════════════════════════════════════════════
 
+@dataclass
+class Destino:
+    """Um destino de encaminhamento (socket -> IP), independente de rede."""
+    socket_id: int          # INT_ID_DEST resolvido (0..15)
+    rede: int                # 1 ou 2 (NW1/NW2)
+    ip: tuple[int, int, int, int]
+    entradas: list[Entrada] = field(default_factory=list)  # header + 4 bytes, p/ mutação
 
+
+@dataclass
+class RegraEncaminhamento:
+    """Uma regra que referencia um socket (ACD ou DIAG)."""
+    tipo: str                # "ACD" ou "DIAG"
+    socket_id: int           # aponta pro Destino.socket_id
+    can_tx_id: Optional[int] # só para ACD
+    entradas: list[Entrada] = field(default_factory=list)
+
+class EncaminhamentoCOM:
+
+    RANGE_NW1 = (32, 47)
+    RANGE_NW2 = (48, 63)
+
+    def __init__(self, config: ADCConfig):
+        self.config = config
+        self.destinos: list[Destino] = []
+        self.regras: list[RegraEncaminhamento] = []
+        self.carregar()
+
+    def carregar(self) -> None:
+        self.destinos.clear()
+        self.regras.clear()
+        for grupo in self.agrupar_blocos_config(self.config.entradas):
+            self._classificar(grupo)
+
+    def _classificar(self, grupo: list[Entrada]) -> None:
+        header = grupo[0]
+        if header.identificator == "CFG_INT_ID_DEST_NW1":
+            self._registrar_destino(header, grupo, rede=1, base=self.RANGE_NW1[0])
+        elif header.identificator == "CFG_INT_ID_DEST_NW2":
+            self._registrar_destino(header, grupo, rede=2, base=self.RANGE_NW2[0])
+        elif header.identificator == "CFG_FWRD_ACD":
+            self._registrar_regra_acd(grupo)
+        elif header.identificator == "CFG_FWRD_DIAG":
+            self._registrar_regra_diag(grupo)
+
+    def adicionar_destino(self, rede: int, ip: tuple[int, int, int, int]) -> Destino:
+        base, topo = self.RANGE_NW1 if rede == 1 else self.RANGE_NW2
+        ocupados = {d.socket_id for d in self.destinos if d.rede == rede}
+        livre = next((s for s in range(0, topo - base + 1) if s not in ocupados), None)
+        if livre is None:
+            raise ValueError(f"Não há sockets livres na rede {rede}.")
+
+        prefixo = f"DEST_IP_INT_ID_NW{rede}"
+        header = Entrada(self.config, "CONFIG", True, f"CFG_INT_ID_DEST_NW{rede}",
+                          str(base + livre), 8, config_name=f"CFG_INT_ID_DEST_NW{rede}")
+        filhos = [
+            Entrada(self.config, "CONFIG", False, f"{prefixo}_B{i+1}", str(byte), 8,
+                     config_name=f"CFG_INT_ID_DEST_NW{rede}")
+            for i, byte in enumerate(ip)
+        ]
+        self._inserir_no_config([header, *filhos])
+        destino = Destino(socket_id=livre, rede=rede, ip=ip, entradas=[header, *filhos])
+        self.destinos.append(destino)
+        return destino
+
+    def remover_destino(self, socket_id: int, rede: int) -> None:
+        if any(r.socket_id == socket_id for r in self.regras):
+            raise ValueError("Socket ainda referenciado por regras de encaminhamento; remova-as primeiro.")
+        destino = next(d for d in self.destinos if d.socket_id == socket_id and d.rede == rede)
+        for e in destino.entradas:
+            self.config.entradas.remove(e)
+        self.destinos.remove(destino)
+
+    def adicionar_regra(self, tipo: str, socket_id: int, can_tx_id: Optional[int] = None) -> RegraEncaminhamento:
+        if not any(d.socket_id == socket_id for d in self.destinos):
+            raise ValueError(f"Socket {socket_id} não configurado em CFG_INT_ID_DEST_NW1/NW2.")
+
+        if tipo == "ACD":
+            header = Entrada(self.config, "CONFIG", True, "CFG_FWRD_ACD", "9", 8, config_name="CFG_FWRD_ACD")
+            filhos = [
+                Entrada(self.config, "CONFIG", False, "INT_ID_DEST", str(socket_id), 4, config_name="CFG_FWRD_ACD"),
+                Entrada(self.config, "CONFIG", False, "CAN_TX_ID", str(can_tx_id), 12, config_name="CFG_FWRD_ACD"),
+            ]
+        elif tipo == "DIAG":
+            header = Entrada(self.config, "CONFIG", True, "CFG_FWRD_DIAG", "11", 8, config_name="CFG_FWRD_DIAG")
+            filhos = [
+                Entrada(self.config, "CONFIG", False, "RESERVED", "0", 4, reserved=True, config_name="CFG_FWRD_DIAG"),
+                Entrada(self.config, "CONFIG", False, "INT_ID_DEST", str(socket_id), 4, config_name="CFG_FWRD_DIAG"),
+            ]
+        else:
+            raise ValueError(f"Tipo de regra desconhecido: {tipo}")
+
+        self._inserir_no_config([header, *filhos])
+        regra = RegraEncaminhamento(tipo=tipo, socket_id=socket_id, can_tx_id=can_tx_id, entradas=[header, *filhos])
+        self.regras.append(regra)
+        return regra
+
+    def remover_regra(self, regra: RegraEncaminhamento) -> None:
+        for e in regra.entradas:
+            self.config.entradas.remove(e)
+        self.regras.remove(regra)
+
+    def agrupar_blocos_config(entradas: list[Entrada]) -> list[list[Entrada]]:
+        """Agrupa entradas do bloco CONFIG em [header, filho1, filho2, ...]."""
+        grupos, atual = [], []
+        for e in entradas:
+            if e.is_comment or e.block != "CONFIG":
+                continue
+            if e.cfg:
+                if atual:
+                    grupos.append(atual)
+                atual = [e]
+            elif atual:
+                atual.append(e)
+        if atual:
+            grupos.append(atual)
+        return grupos
+
+
+    def inserir_bloco(config: ADCConfig, novas: list[Entrada]) -> None:
+        idx = next((i for i, e in enumerate(config.entradas) if e.block == "PROTECTION"), len(config.entradas))
+        for offset, e in enumerate(novas):
+            config.entradas.insert(idx + offset, e)
+
+
+    def remover_bloco(config: ADCConfig, grupo: list[Entrada]) -> None:
+        for e in grupo:
+            config.entradas.remove(e)
 
 class SessionConfig:
     def __init__(self):
@@ -123,6 +253,15 @@ class ADCConfig:
             "COMPONENT": ("108" if tipo == TipoADC.COM else "2"),
             "VERSION": "",
         }
+
+    # em ADCConfig
+    @property
+    def encaminhamento(self) -> Encaminhamento:
+        if self._encaminhamento is None:
+            self._encaminhamento = (
+                EncaminhamentoCOM(self) if self.tipo == TipoADC.COM else EncaminhamentoAEB(self)
+            )
+        return self._encaminhamento
 
     def adicionar_entrada(self, entrada: Entrada) -> None:
         self.entradas.append(entrada)

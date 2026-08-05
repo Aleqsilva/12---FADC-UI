@@ -62,13 +62,73 @@ class EncaminhamentoCOM:
     def _classificar(self, grupo: list[Entrada]) -> None:
         header = grupo[0]
         if header.identificator == "CFG_INT_ID_DEST_NW1":
-            self._registrar_destino(header, grupo, rede=1, base=self.RANGE_NW1[0])
+            base = self.RANGE_NW1[0]
+            rede = 1
+            try:
+                socket_abs = int(header.valor)
+            except Exception:
+                return
+            socket_id = socket_abs - base
+            # coletar 4 bytes de IP (filhos do grupo)
+            ip_bytes = []
+            for filho in grupo[1:]:
+                try:
+                    ip_bytes.append(int(filho.valor))
+                except Exception:
+                    ip_bytes.append(0)
+            if len(ip_bytes) >= 4:
+                ip = tuple(ip_bytes[:4])
+            else:
+                ip = tuple((ip_bytes + [0, 0, 0, 0])[:4])
+            destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo))
+            self.destinos.append(destino)
         elif header.identificator == "CFG_INT_ID_DEST_NW2":
-            self._registrar_destino(header, grupo, rede=2, base=self.RANGE_NW2[0])
+            base = self.RANGE_NW2[0]
+            rede = 2
+            try:
+                socket_abs = int(header.valor)
+            except Exception:
+                return
+            socket_id = socket_abs - base
+            ip_bytes = []
+            for filho in grupo[1:]:
+                try:
+                    ip_bytes.append(int(filho.valor))
+                except Exception:
+                    ip_bytes.append(0)
+            if len(ip_bytes) >= 4:
+                ip = tuple(ip_bytes[:4])
+            else:
+                ip = tuple((ip_bytes + [0, 0, 0, 0])[:4])
+            destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo))
+            self.destinos.append(destino)
         elif header.identificator == "CFG_FWRD_ACD":
-            self._registrar_regra_acd(grupo)
+            # procurar INT_ID_DEST e CAN_TX_ID nos filhos
+            socket_id = None
+            can_tx_id = None
+            for filho in grupo[1:]:
+                if filho.identificator == "INT_ID_DEST":
+                    try:
+                        socket_id = int(filho.valor)
+                    except Exception:
+                        socket_id = None
+                elif filho.identificator == "CAN_TX_ID":
+                    try:
+                        can_tx_id = int(filho.valor)
+                    except Exception:
+                        can_tx_id = None
+            regra = RegraEncaminhamento(tipo="ACD", socket_id=socket_id if socket_id is not None else -1, can_tx_id=can_tx_id, entradas=list(grupo))
+            self.regras.append(regra)
         elif header.identificator == "CFG_FWRD_DIAG":
-            self._registrar_regra_diag(grupo)
+            socket_id = None
+            for filho in grupo[1:]:
+                if filho.identificator == "INT_ID_DEST":
+                    try:
+                        socket_id = int(filho.valor)
+                    except Exception:
+                        socket_id = None
+            regra = RegraEncaminhamento(tipo="DIAG", socket_id=socket_id if socket_id is not None else -1, can_tx_id=None, entradas=list(grupo))
+            self.regras.append(regra)
 
     def adicionar_destino(self, rede: int, ip: tuple[int, int, int, int]) -> Destino:
         base, topo = self.RANGE_NW1 if rede == 1 else self.RANGE_NW2
@@ -147,7 +207,6 @@ class EncaminhamentoCOM:
         if atual:
             grupos.append(atual)
         return grupos
-
 
     def inserir_bloco(self, config: ADCConfig, novas: list[Entrada]) -> None:
         idx = next((i for i, e in enumerate(config.entradas) if e.block == "PROTECTION"), len(config.entradas))
@@ -541,6 +600,7 @@ class ADCController:
         self._validador = Validador()
         self._bd = BancoDadosConfig()
         self._sessao = SessionConfig()
+        self._encaminhamento: Optional[EncaminhamentoCOM] = None
 
     @property
     def sessao(self) -> Optional[SessionConfig]:
@@ -564,6 +624,7 @@ class ADCController:
         sessao = self._garantir_sessao()
         sessao.adicionar_config(config) 
         self._config = config
+        self._encaminhamento = EncaminhamentoCOM(config) if config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
 
     def carregar_arquivo(self, path: str) -> None:
         config = self._parser.parse(path)
@@ -571,11 +632,14 @@ class ADCController:
         sessao = self._garantir_sessao()
         sessao.adicionar_config(config)
         self._config = config
+        self._encaminhamento = EncaminhamentoCOM(config) if config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
 
     def trocar_config(self, id: str) -> None:
         if self._sessao is None:
             raise RuntimeError("Nenhuma sessão ativa.")
         self._config = self._sessao.selecionar(id)
+        self._encaminhamento = EncaminhamentoCOM(self._config) if self._config and self._config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
+        self.encaminhamento.encami
 
     def remover_config(self, id: str) -> None:
         if self._sessao is None:
@@ -584,6 +648,8 @@ class ADCController:
         self._config = self._sessao.ativo
         if self._sessao.esta_vazia():
             self._sessao = None
+        if self._config is None:
+            self._encaminhamento = None
         
     def editar_entrada(self, identificator: str, valor: Any) -> None:
         self._garantir_config()
@@ -790,7 +856,6 @@ class EntryPopup(tk.Entry):
         try:
             self.entrada.validar()
         except Exception as exc:
-            # Reverte a alteração se a entrada ficar inválida
             setattr(self.entrada, atributo, valor_anterior)
             messagebox.showerror("Valor inválido", str(exc))
             self.destroy()
@@ -889,11 +954,11 @@ class MainView:
             ttk.Label(lbf, text=texto).grid(row=linha, column=0, sticky="w", padx=4)
             ttk.Entry(lbf, width=20, state="disabled").grid(row=linha, column=1, sticky="ew", padx=4)
 
-        frame_tabela = ttk.Frame(lbf, relief="solid", borderwidth=1)
-        frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
+        self._frame_tabela = ttk.Frame(lbf, relief="solid", borderwidth=1)
+        self._frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
 
         ttk.Label(
-            frame_tabela,
+            self._frame_tabela,
             text="FDS",
             width=10,
             anchor="center"
@@ -902,14 +967,14 @@ class MainView:
 
         # ISSO DEVE VIRAR UM FOR PARA TODOS OS FDS' CONECTADOS
         ttk.Label(
-            frame_tabela,
+            self._frame_tabela,
             text="IPs dos FDS' que receberão\ninformação da placa COM",
             relief="groove",
             anchor="center"
         ).grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
         ttk.Label(
-            frame_tabela,
+            self._frame_tabela,
             text="FADC",
             width=10,
             anchor="center"
@@ -917,7 +982,7 @@ class MainView:
 
         # ISSO DEVE VIRAR UM FOR PARA TODOS OS IPS QUE ENVIAM INFORMAÇÃO
         ttk.Label(
-            frame_tabela,
+            self._frame_tabela,
             text="IDs das AEBs que receberão\ndados de contagem relacionados\naos IPs de FADC",
             relief="groove",
             anchor="center"
@@ -925,13 +990,33 @@ class MainView:
 
         # Ajuste de expansão
         lbf.columnconfigure(1, weight=1)
-        frame_tabela.columnconfigure(1, weight=1)
+        self._frame_tabela.columnconfigure(1, weight=1)
 
         self.atualiza_dados_encaminhamento()
 
     def atualiza_dados_encaminhamento(self) -> None:
-        pass
+        # atualiza visualização de destinos/regra de encaminhamento na UI
+        if not hasattr(self, "_frame_tabela") or self._frame_tabela is None:
+            return
+        
+        for w in self._frame_tabela.winfo_children():
+            w.destroy()
 
+        enc = getattr(self._controller, '_encaminhamento', None)
+        if enc is None:
+            ttk.Label(self._frame_tabela, text="Nenhum encaminhamento (não é configuração COM)").grid(row=0, column=0, sticky="w", padx=6, pady=6)
+            return
+
+        # Cabeçalhos
+        ttk.Label(self._frame_tabela, text="Socket", width=10, anchor="w").grid(row=0, column=0, sticky="w", padx=6)
+        ttk.Label(self._frame_tabela, text="Rede", width=6, anchor="w").grid(row=0, column=1, sticky="w", padx=6)
+        ttk.Label(self._frame_tabela, text="IP", anchor="w").grid(row=0, column=2, sticky="w", padx=6)
+
+        for i, destino in enumerate(enc.destinos, start=1):
+            ip_str = '.'.join(str(b) for b in destino.ip)
+            ttk.Label(self._frame_tabela, text=str(destino.socket_id)).grid(row=i, column=0, sticky="w", padx=6)
+            ttk.Label(self._frame_tabela, text=str(destino.rede)).grid(row=i, column=1, sticky="w", padx=6)
+            ttk.Label(self._frame_tabela, text=ip_str).grid(row=i, column=2, sticky="w", padx=6)
 
     def atualiza_sessoes(self) -> None:
         self.lista.delete(0, tk.END)
@@ -945,6 +1030,7 @@ class MainView:
                 self.lista.insert(tk.END, "—")
 
         self.lista.pack(fill="both", expand=True, pady=(8, 0))
+        self.atualiza_dados_encaminhamento()
 
     def on_double_click_sessao(self, event) -> None:
         selection = self.lista.curselection()

@@ -85,7 +85,7 @@ class EncaminhamentoCOM:
                      config_name=f"CFG_INT_ID_DEST_NW{rede}")
             for i, byte in enumerate(ip)
         ]
-        self._inserir_no_config([header, *filhos])
+        #self._inserir_no_config([header, *filhos])  ESTA CONFIGURAÇÃO, POR ORA, MANTERÁ COMENTADA, POIS DEVO ATUALIZAR A FUNÇÃO INSERIR_NO_CONFIG 
         destino = Destino(socket_id=livre, rede=rede, ip=ip, entradas=[header, *filhos])
         self.destinos.append(destino)
         return destino
@@ -94,6 +94,8 @@ class EncaminhamentoCOM:
         if any(r.socket_id == socket_id for r in self.regras):
             raise ValueError("Socket ainda referenciado por regras de encaminhamento; remova-as primeiro.")
         destino = next(d for d in self.destinos if d.socket_id == socket_id and d.rede == rede)
+        if destino is None:
+            raise ValueError(f"Destino com socket {socket_id} na rede {rede} não encontrado.")
         for e in destino.entradas:
             self.config.entradas.remove(e)
         self.destinos.remove(destino)
@@ -101,6 +103,9 @@ class EncaminhamentoCOM:
     def adicionar_regra(self, tipo: str, socket_id: int, can_tx_id: Optional[int] = None) -> RegraEncaminhamento:
         if not any(d.socket_id == socket_id for d in self.destinos):
             raise ValueError(f"Socket {socket_id} não configurado em CFG_INT_ID_DEST_NW1/NW2.")
+
+        if can_tx_id is None:
+            raise ValueError("can_tx_id deve ser fornecido para regras do tipo ACD.")
 
         if tipo == "ACD":
             header = Entrada(self.config, "CONFIG", True, "CFG_FWRD_ACD", "9", 8, config_name="CFG_FWRD_ACD")
@@ -117,7 +122,7 @@ class EncaminhamentoCOM:
         else:
             raise ValueError(f"Tipo de regra desconhecido: {tipo}")
 
-        self._inserir_no_config([header, *filhos])
+        #self._inserir_no_config([header, *filhos])  ESTA CONFIGURAÇÃO, POR ORA, MANTERÁ COMENTADA, POIS DEVO ATUALIZAR A FUNÇÃO INSERIR_NO_CONFIG 
         regra = RegraEncaminhamento(tipo=tipo, socket_id=socket_id, can_tx_id=can_tx_id, entradas=[header, *filhos])
         self.regras.append(regra)
         return regra
@@ -127,7 +132,7 @@ class EncaminhamentoCOM:
             self.config.entradas.remove(e)
         self.regras.remove(regra)
 
-    def agrupar_blocos_config(entradas: list[Entrada]) -> list[list[Entrada]]:
+    def agrupar_blocos_config(self, entradas: list[Entrada]) -> list[list[Entrada]]:
         """Agrupa entradas do bloco CONFIG em [header, filho1, filho2, ...]."""
         grupos, atual = [], []
         for e in entradas:
@@ -144,13 +149,13 @@ class EncaminhamentoCOM:
         return grupos
 
 
-    def inserir_bloco(config: ADCConfig, novas: list[Entrada]) -> None:
+    def inserir_bloco(self, config: ADCConfig, novas: list[Entrada]) -> None:
         idx = next((i for i, e in enumerate(config.entradas) if e.block == "PROTECTION"), len(config.entradas))
         for offset, e in enumerate(novas):
             config.entradas.insert(idx + offset, e)
 
 
-    def remover_bloco(config: ADCConfig, grupo: list[Entrada]) -> None:
+    def remover_bloco(self, config: ADCConfig, grupo: list[Entrada]) -> None:
         for e in grupo:
             config.entradas.remove(e)
 
@@ -253,15 +258,6 @@ class ADCConfig:
             "COMPONENT": ("108" if tipo == TipoADC.COM else "2"),
             "VERSION": "",
         }
-
-    # em ADCConfig
-    @property
-    def encaminhamento(self) -> Encaminhamento:
-        if self._encaminhamento is None:
-            self._encaminhamento = (
-                EncaminhamentoCOM(self) if self.tipo == TipoADC.COM else EncaminhamentoAEB(self)
-            )
-        return self._encaminhamento
 
     def adicionar_entrada(self, entrada: Entrada) -> None:
         self.entradas.append(entrada)

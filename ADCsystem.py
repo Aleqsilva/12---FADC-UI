@@ -56,6 +56,7 @@ class EncaminhamentoCOM:
     def carregar(self) -> None:
         self.destinos.clear()
         self.regras.clear()
+        print("Carregando encaminhamento...")
         for grupo in self.agrupar_blocos_config(self.config.entradas):
             self._classificar(grupo)
 
@@ -129,6 +130,7 @@ class EncaminhamentoCOM:
                         socket_id = None
             regra = RegraEncaminhamento(tipo="DIAG", socket_id=socket_id if socket_id is not None else -1, can_tx_id=None, entradas=list(grupo))
             self.regras.append(regra)
+        print(self.regras[-1] if self.regras else "Nenhuma regra encontrada.")
 
     def adicionar_destino(self, rede: int, ip: tuple[int, int, int, int]) -> Destino:
         base, topo = self.RANGE_NW1 if rede == 1 else self.RANGE_NW2
@@ -145,7 +147,7 @@ class EncaminhamentoCOM:
                      config_name=f"CFG_INT_ID_DEST_NW{rede}")
             for i, byte in enumerate(ip)
         ]
-        #self._inserir_no_config([header, *filhos])  ESTA CONFIGURAÇÃO, POR ORA, MANTERÁ COMENTADA, POIS DEVO ATUALIZAR A FUNÇÃO INSERIR_NO_CONFIG 
+        self._inserir_no_config([header, *filhos])
         destino = Destino(socket_id=livre, rede=rede, ip=ip, entradas=[header, *filhos])
         self.destinos.append(destino)
         return destino
@@ -153,7 +155,7 @@ class EncaminhamentoCOM:
     def remover_destino(self, socket_id: int, rede: int) -> None:
         if any(r.socket_id == socket_id for r in self.regras):
             raise ValueError("Socket ainda referenciado por regras de encaminhamento; remova-as primeiro.")
-        destino = next(d for d in self.destinos if d.socket_id == socket_id and d.rede == rede)
+        destino = next((d for d in self.destinos if d.socket_id == socket_id and d.rede == rede),None)
         if destino is None:
             raise ValueError(f"Destino com socket {socket_id} na rede {rede} não encontrado.")
         for e in destino.entradas:
@@ -182,7 +184,7 @@ class EncaminhamentoCOM:
         else:
             raise ValueError(f"Tipo de regra desconhecido: {tipo}")
 
-        #self._inserir_no_config([header, *filhos])  ESTA CONFIGURAÇÃO, POR ORA, MANTERÁ COMENTADA, POIS DEVO ATUALIZAR A FUNÇÃO INSERIR_NO_CONFIG 
+        self._inserir_no_config([header, *filhos])
         regra = RegraEncaminhamento(tipo=tipo, socket_id=socket_id, can_tx_id=can_tx_id, entradas=[header, *filhos])
         self.regras.append(regra)
         return regra
@@ -208,11 +210,17 @@ class EncaminhamentoCOM:
             grupos.append(atual)
         return grupos
 
-    def inserir_bloco(self, config: ADCConfig, novas: list[Entrada]) -> None:
-        idx = next((i for i, e in enumerate(config.entradas) if e.block == "PROTECTION"), len(config.entradas))
-        for offset, e in enumerate(novas):
-            config.entradas.insert(idx + offset, e)
-
+    def _inserir_no_config(self, entradas: list[Entrada]) -> None:
+        """Insere um grupo de entradas (header CFG_ + filhos) no config,
+        logo antes do bloco [PROTECTION], e mantém configs_dict sincronizado."""
+        idx = next(
+            (i for i, e in enumerate(self.config.entradas) if e.block == "PROTECTION"),
+            len(self.config.entradas),
+        )
+        for offset, entrada in enumerate(entradas):
+            self.config.entradas.insert(idx + offset, entrada)
+            if not entrada.is_comment and entrada.block == "CONFIG":
+                self.config.preenche_config_dict(self.config, entrada)
 
     def remover_bloco(self, config: ADCConfig, grupo: list[Entrada]) -> None:
         for e in grupo:
@@ -639,7 +647,6 @@ class ADCController:
             raise RuntimeError("Nenhuma sessão ativa.")
         self._config = self._sessao.selecionar(id)
         self._encaminhamento = EncaminhamentoCOM(self._config) if self._config and self._config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
-        self.encaminhamento.encami
 
     def remover_config(self, id: str) -> None:
         if self._sessao is None:
@@ -943,17 +950,23 @@ class MainView:
         lbf = tk.LabelFrame(central, text="Endereçamento", bg="#f0f0f0", font=("Segoe UI", 9, "bold"))
         lbf.pack(fill="both", expand=True, padx=10, pady=10)
 
+        self._campos_enderecamento: dict[str, tk.StringVar] = {}
+
         campos = [
-            "IP1 ",
-            "IP2",
-            "MÁSCARA",
-            "DEFAULT GW",
+            ("IP1", "ip1"),
+            ("IP2", "ip2"),
+            ("MÁSCARA", "mascara"),
+            ("DEFAULT GW", "gateway"),
         ]
 
-        for linha, texto in enumerate(campos):
+        for linha, (texto, chave) in enumerate(campos):
             ttk.Label(lbf, text=texto).grid(row=linha, column=0, sticky="w", padx=4)
-            ttk.Entry(lbf, width=20, state="disabled").grid(row=linha, column=1, sticky="ew", padx=4)
-
+            var = tk.StringVar(value="—")
+            ttk.Entry(lbf, width=20, state="disabled", textvariable=var).grid(
+                row=linha, column=1, sticky="ew", padx=4
+            )
+            self._campos_enderecamento[chave] = var
+            
         self._frame_tabela = ttk.Frame(lbf, relief="solid", borderwidth=1)
         self._frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
 
@@ -965,7 +978,6 @@ class MainView:
         ).grid(row=0, column=0, sticky="nsew")
 
 
-        # ISSO DEVE VIRAR UM FOR PARA TODOS OS FDS' CONECTADOS
         ttk.Label(
             self._frame_tabela,
             text="IPs dos FDS' que receberão\ninformação da placa COM",
@@ -980,7 +992,6 @@ class MainView:
             anchor="center"
         ).grid(row=1, column=0, sticky="nsew")
 
-        # ISSO DEVE VIRAR UM FOR PARA TODOS OS IPS QUE ENVIAM INFORMAÇÃO
         ttk.Label(
             self._frame_tabela,
             text="IDs das AEBs que receberão\ndados de contagem relacionados\naos IPs de FADC",
@@ -988,11 +999,45 @@ class MainView:
             anchor="center"
         ).grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
 
+        self._frame_destino = ttk.Frame(lbf, relief="solid", borderwidth=1)
+        self._frame_destino.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
+
         # Ajuste de expansão
         lbf.columnconfigure(1, weight=1)
         self._frame_tabela.columnconfigure(1, weight=1)
 
+        self.atualiza_campos_enderecamento()
         self.atualiza_dados_encaminhamento()
+
+    def atualiza_campos_enderecamento(self) -> None:
+        if not hasattr(self, "_campos_enderecamento"):
+            return
+
+        config = self._controller.config
+        if config is None or config.tipo != TipoADC.COM:
+            for var in self._campos_enderecamento.values():
+                var.set("—")
+            return
+
+        self._campos_enderecamento["ip1"].set(self._obter_ip_str(config, "MY_IP_NW1"))
+        self._campos_enderecamento["ip2"].set(self._obter_ip_str(config, "MY_IP_NW2"))
+        self._campos_enderecamento["gateway"].set(self._obter_ip_str(config, "DFLT_GTWY_IP"))
+
+        mask1 = config.obter_entrada("MY_MASK_NW1")
+        mask2 = config.obter_entrada("MY_MASK_NW2")
+        partes = []
+        if mask1 is not None:
+            partes.append(f"NW1: /{mask1.valor}")
+        if mask2 is not None and str(mask2.valor) != "0":
+            partes.append(f"NW2: /{mask2.valor}")
+        self._campos_enderecamento["mascara"].set(" | ".join(partes) if partes else "—")
+
+    def _obter_ip_str(self, config: ADCConfig, prefixo: str) -> str:
+        """Monta 'a.b.c.d' a partir das 4 entradas <prefixo>_B1..B4. '—' se nenhuma existir."""
+        entradas = [config.obter_entrada(f"{prefixo}_B{i}") for i in range(1, 5)]
+        if all(e is None for e in entradas):
+            return "—"
+        return ".".join(str(e.valor) if e is not None else "0" for e in entradas)
 
     def atualiza_dados_encaminhamento(self) -> None:
         # atualiza visualização de destinos/regra de encaminhamento na UI
@@ -1031,6 +1076,7 @@ class MainView:
 
         self.lista.pack(fill="both", expand=True, pady=(8, 0))
         self.atualiza_dados_encaminhamento()
+        self.atualiza_campos_enderecamento()
 
     def on_double_click_sessao(self, event) -> None:
         selection = self.lista.curselection()
@@ -1064,6 +1110,7 @@ class MainView:
         self._id_var.set(config.id or "—")
         self._tipo_var.set(config.tipo.name)
         self._form.renderizar_campos(config, self.toggle_var.get())
+        self.atualiza_campos_enderecamento()
 
     def _on_nova_sessao(self) -> None:
         response = messagebox.askyesno("Confirmação", "Sua sessão atual será encerrada. Deseja continuar?")

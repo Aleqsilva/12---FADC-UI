@@ -32,6 +32,7 @@ class Destino:
     rede: int                # 1 ou 2 (NW1/NW2)
     ip: tuple[int, int, int, int]
     entradas: list[Entrada] = field(default_factory=list)  # header + 4 bytes, p/ mutação
+    descricao: str = ""  # comentário prévio ao config, normalmente descrevendo para onde vai a informação
 
 
 @dataclass
@@ -56,7 +57,6 @@ class EncaminhamentoCOM:
     def carregar(self) -> None:
         self.destinos.clear()
         self.regras.clear()
-        print("Carregando encaminhamento...")
         for grupo in self.agrupar_blocos_config(self.config.entradas):
             self._classificar(grupo)
 
@@ -81,7 +81,7 @@ class EncaminhamentoCOM:
                 ip = tuple(ip_bytes[:4])
             else:
                 ip = tuple((ip_bytes + [0, 0, 0, 0])[:4])
-            destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo))
+            destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo), descricao=grupo[-1].comentario if grupo[-1].comentario else "")
             self.destinos.append(destino)
         elif header.identificator == "CFG_INT_ID_DEST_NW2":
             base = self.RANGE_NW2[0]
@@ -101,7 +101,7 @@ class EncaminhamentoCOM:
                 ip = tuple(ip_bytes[:4])
             else:
                 ip = tuple((ip_bytes + [0, 0, 0, 0])[:4])
-            destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo))
+            destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo), descricao=grupo[-1].comentario if grupo[-1].comentario else "")
             self.destinos.append(destino)
         elif header.identificator == "CFG_FWRD_ACD":
             # procurar INT_ID_DEST e CAN_TX_ID nos filhos
@@ -130,7 +130,7 @@ class EncaminhamentoCOM:
                         socket_id = None
             regra = RegraEncaminhamento(tipo="DIAG", socket_id=socket_id if socket_id is not None else -1, can_tx_id=None, entradas=list(grupo))
             self.regras.append(regra)
-        print(self.regras[-1] if self.regras else "Nenhuma regra encontrada.")
+        #print(self.regras[-1] if self.regras else "Nenhuma regra encontrada.")
 
     def adicionar_destino(self, rede: int, ip: tuple[int, int, int, int]) -> Destino:
         base, topo = self.RANGE_NW1 if rede == 1 else self.RANGE_NW2
@@ -148,7 +148,7 @@ class EncaminhamentoCOM:
             for i, byte in enumerate(ip)
         ]
         self._inserir_no_config([header, *filhos])
-        destino = Destino(socket_id=livre, rede=rede, ip=ip, entradas=[header, *filhos])
+        destino = Destino(socket_id=livre, rede=rede, ip=ip, entradas=[header, *filhos], descricao=filhos[-1].comentario if filhos[-1].comentario else "")
         self.destinos.append(destino)
         return destino
 
@@ -196,18 +196,25 @@ class EncaminhamentoCOM:
 
     def agrupar_blocos_config(self, entradas: list[Entrada]) -> list[list[Entrada]]:
         """Agrupa entradas do bloco CONFIG em [header, filho1, filho2, ...]."""
-        grupos, atual = [], []
+        grupos, atual, comment_bin = [], [], []
         for e in entradas:
-            if e.is_comment or e.block != "CONFIG":
+            if e.is_comment:
+                comment_bin.append(e)
+                continue
+            if e.block != "CONFIG":
                 continue
             if e.cfg:
                 if atual:
                     grupos.append(atual)
                 atual = [e]
+                if e.identificator.startswith("CFG_INT_ID_DEST_NW"):
+                    atual.append(comment_bin.pop()) if comment_bin else None
             elif atual:
-                atual.append(e)
+                atual.insert(1, e)
         if atual:
             grupos.append(atual)
+
+        comment_bin.clear()
         return grupos
 
     def _inserir_no_config(self, entradas: list[Entrada]) -> None:
@@ -354,7 +361,7 @@ class ADCConfig:
             }
 
     def __repr__(self) -> str:
-        return f"ADCConfig(id={self.id['id']!r}, tipo={self.tipo}, entradas={self.entradas})"
+        return f"ADCConfig(id={self.id!r}, tipo={self.tipo}, entradas={self.entradas})"
 
 
 class Validador:
@@ -970,37 +977,28 @@ class MainView:
         self._frame_tabela = ttk.Frame(lbf, relief="solid", borderwidth=1)
         self._frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
 
-        ttk.Label(
-            self._frame_tabela,
-            text="FDS",
-            width=10,
-            anchor="center"
-        ).grid(row=0, column=0, sticky="nsew")
+        # Tabela de encaminhamento: usa Treeview para facilitar atualizações
+        self._tabela_encaminhamento = ttk.Treeview(self._frame_tabela, columns=("Socket", "Rede", "IP", "Descrição"), show="headings", height=6)
+        self._tabela_encaminhamento.heading("Socket", text="Socket")
+        self._tabela_encaminhamento.heading("Rede", text="Rede")
+        self._tabela_encaminhamento.heading("IP", text="IP")
+        self._tabela_encaminhamento.heading("Descrição", text="Descrição")
+        self._tabela_encaminhamento.column("Socket", width=40, anchor="w")
+        self._tabela_encaminhamento.column("Rede", width=30, anchor="w")
+        self._tabela_encaminhamento.column("IP", width=100, anchor="w")
+        self._tabela_encaminhamento.column("Descrição", width=200, anchor="w")
 
+        vsb_enc = ttk.Scrollbar(self._frame_tabela, orient="vertical", command=self._tabela_encaminhamento.yview)
+        self._tabela_encaminhamento.configure(yscrollcommand=vsb_enc.set)
 
-        ttk.Label(
-            self._frame_tabela,
-            text="IPs dos FDS' que receberão\ninformação da placa COM",
-            relief="groove",
-            anchor="center"
-        ).grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self._tabela_encaminhamento.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
+        vsb_enc.grid(row=0, column=2, sticky="ns")
 
-        ttk.Label(
-            self._frame_tabela,
-            text="FADC",
-            width=10,
-            anchor="center"
-        ).grid(row=1, column=0, sticky="nsew")
+        # permitir que a tabela expanda corretamente
+        self._frame_tabela.columnconfigure(0, weight=1)
+        self._frame_tabela.columnconfigure(1, weight=0)
+        self._frame_tabela.rowconfigure(0, weight=1)
 
-        ttk.Label(
-            self._frame_tabela,
-            text="IDs das AEBs que receberão\ndados de contagem relacionados\naos IPs de FADC",
-            relief="groove",
-            anchor="center"
-        ).grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
-
-        self._frame_destino = ttk.Frame(lbf, relief="solid", borderwidth=1)
-        self._frame_destino.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
 
         # Ajuste de expansão
         lbf.columnconfigure(1, weight=1)
@@ -1043,25 +1041,32 @@ class MainView:
         # atualiza visualização de destinos/regra de encaminhamento na UI
         if not hasattr(self, "_frame_tabela") or self._frame_tabela is None:
             return
-        
-        for w in self._frame_tabela.winfo_children():
-            w.destroy()
-
+        # Se existir o Treeview, atualiza nele; caso contrário, nada a fazer.
+        tabela = getattr(self, '_tabela_encaminhamento', None)
         enc = getattr(self._controller, '_encaminhamento', None)
-        if enc is None:
-            ttk.Label(self._frame_tabela, text="Nenhum encaminhamento (não é configuração COM)").grid(row=0, column=0, sticky="w", padx=6, pady=6)
+
+        if tabela is None:
             return
 
-        # Cabeçalhos
-        ttk.Label(self._frame_tabela, text="Socket", width=10, anchor="w").grid(row=0, column=0, sticky="w", padx=6)
-        ttk.Label(self._frame_tabela, text="Rede", width=6, anchor="w").grid(row=0, column=1, sticky="w", padx=6)
-        ttk.Label(self._frame_tabela, text="IP", anchor="w").grid(row=0, column=2, sticky="w", padx=6)
+        # limpar tabela
+        for iid in tabela.get_children():
+            tabela.delete(iid)
 
-        for i, destino in enumerate(enc.destinos, start=1):
+        if enc is None:
+            tabela.insert("", "end", values=("", "", "Nenhum encaminhamento (não é configuração COM)"))
+            self._status("Encaminhamento: nenhum (não-COM)")
+            return
+        
+        # popular com destinos
+        for destino in enc.destinos:
             ip_str = '.'.join(str(b) for b in destino.ip)
-            ttk.Label(self._frame_tabela, text=str(destino.socket_id)).grid(row=i, column=0, sticky="w", padx=6)
-            ttk.Label(self._frame_tabela, text=str(destino.rede)).grid(row=i, column=1, sticky="w", padx=6)
-            ttk.Label(self._frame_tabela, text=ip_str).grid(row=i, column=2, sticky="w", padx=6)
+            tabela.insert("", "end", values=(str(destino.socket_id), str(destino.rede), ip_str, destino.descricao))
+
+        # status simples para debug/feedback
+        try:
+            self._status(f"Encaminhamento: {len(enc.destinos)} destino(s) mostrados")
+        except Exception:
+            pass
 
     def atualiza_sessoes(self) -> None:
         self.lista.delete(0, tk.END)

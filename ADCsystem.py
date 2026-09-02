@@ -42,6 +42,7 @@ class RegraEncaminhamento:
     socket_id: int           # aponta pro Destino.socket_id
     can_tx_id: Optional[int] # só para ACD
     entradas: list[Entrada] = field(default_factory=list)
+    intencao: str = ""  # comentário prévio ao config, normalmente descrevendo a intenção da regra
 
 class EncaminhamentoCOM:
 
@@ -100,7 +101,7 @@ class EncaminhamentoCOM:
             if len(ip_bytes) >= 4:
                 ip = tuple(ip_bytes[:4])
             else:
-                ip = tuple((ip_bytes + [0, 0, 0, 0])[:4])
+                ip = tuple((ip_bytes + [0, 0, 0, 0])[:4])   
             destino = Destino(socket_id=socket_id, rede=rede, ip=ip, entradas=list(grupo), descricao=grupo[-1].comentario if grupo[-1].comentario else "")
             self.destinos.append(destino)
         elif header.identificator == "CFG_FWRD_ACD":
@@ -118,7 +119,7 @@ class EncaminhamentoCOM:
                         can_tx_id = int(filho.valor)
                     except Exception:
                         can_tx_id = None
-            regra = RegraEncaminhamento(tipo="ACD", socket_id=socket_id if socket_id is not None else -1, can_tx_id=can_tx_id, entradas=list(grupo))
+            regra = RegraEncaminhamento(tipo="ACD", socket_id=socket_id if socket_id is not None else -1, can_tx_id=can_tx_id, entradas=list(grupo), intencao=grupo[-1].comentario if grupo[-1].comentario else "")
             self.regras.append(regra)
         elif header.identificator == "CFG_FWRD_DIAG":
             socket_id = None
@@ -128,9 +129,8 @@ class EncaminhamentoCOM:
                         socket_id = int(filho.valor)
                     except Exception:
                         socket_id = None
-            regra = RegraEncaminhamento(tipo="DIAG", socket_id=socket_id if socket_id is not None else -1, can_tx_id=None, entradas=list(grupo))
+            regra = RegraEncaminhamento(tipo="DIAG", socket_id=socket_id if socket_id is not None else -1, can_tx_id=None, entradas=list(grupo), intencao=grupo[-1].comentario if grupo[-1].comentario else "")
             self.regras.append(regra)
-        #print(self.regras[-1] if self.regras else "Nenhuma regra encontrada.")
 
     def adicionar_destino(self, rede: int, ip: tuple[int, int, int, int]) -> Destino:
         base, topo = self.RANGE_NW1 if rede == 1 else self.RANGE_NW2
@@ -207,14 +207,14 @@ class EncaminhamentoCOM:
                 if atual:
                     grupos.append(atual)
                 atual = [e]
-                if e.identificator.startswith("CFG_INT_ID_DEST_NW"):
+                if e.identificator.startswith("CFG_INT_ID_DEST_NW") or e.identificator.startswith("CFG_FWRD_"):
                     atual.append(comment_bin.pop()) if comment_bin else None
             elif atual:
                 atual.insert(1, e)
         if atual:
             grupos.append(atual)
 
-        comment_bin.clear()
+            comment_bin.clear()
         return grupos
 
     def _inserir_no_config(self, entradas: list[Entrada]) -> None:
@@ -323,9 +323,13 @@ class Entrada:
         }
 
 class ADCConfig:
-    def __init__(self, tipo: TipoADC, id: str = ""):
+    def __init__(self, tipo: TipoADC, id: str = "", local: Optional[str] = None, programador: Optional[str] = None, revisor: Optional[str] = None, num_rev: Optional[float] = None):
         self.id = id
         self.tipo: TipoADC           = tipo
+        self.local = local
+        self.programador = programador
+        self.revisor = revisor
+        self.num_rev = num_rev
         self.configs_dict = {}
         self.entradas: List[Entrada] = []
         self.protection = {
@@ -497,6 +501,7 @@ class ADCParser:
         
         _,_,config_id = self.obtem_valores_linha(linha_ID) # Obtem o id do arquivo
         config_tipo = self.obtem_tipo_adc(linhas) # Obtem o tipo do ADC do arquivo
+        local, prog, rev, num_rev = self.obtem_header(linhas) # Obtem local, programador e revisor do arquivo
 
         if not config_id or not config_tipo:
             raise ValueError("Arquivo sem ID ou tipo ADC.")
@@ -507,7 +512,7 @@ class ADCParser:
         if config_tipo not in TipoADC:
             raise ValueError(f"Tipo ADC desconhecido: {config_tipo}")
 
-        config = ADCConfig(config_tipo, id=config_id)       
+        config = ADCConfig(config_tipo, id=config_id, local=local, programador=prog, revisor=rev, num_rev=num_rev)       
 
         esta_salvando = False
         cfg_name = None
@@ -574,7 +579,22 @@ class ADCParser:
 
                         protection_title = True
                     f.write(f"{e.identificator:<{width}}{e.num_bits}:{e.valor}{comment}\n")
-        
+
+    def obtem_header(self, linhas: list[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Extrai os valores de local, programador e revisor do arquivo ADC."""
+        local = prog = rev = None
+        for linha in linhas:
+            if linha.startswith("//"):
+                if "Local:" in linha:
+                    local = linha.split("Local:", 1)[1].strip()
+                elif "Programador:" in linha:
+                    prog = linha.split("Programador:", 1)[1].strip()
+                elif "Revisor:" in linha:
+                    rev = linha.split("Revisor:", 1)[1].strip()
+                elif "Nº de Revisão:" in linha:
+                    num_rev = linha.split("Nº de Revisão:", 1)[1].strip()
+        return local, prog, rev, num_rev
+
     def obtem_valores_linha(self, linha) -> tuple[str, str, str]:
         """Extrai os valores de uma linha do arquivo ADC e retorna como uma tupla (identificator, num_bits, valor)."""
         if linha.startswith("//"):
@@ -608,7 +628,7 @@ class ADCFactory:
 # CONTROLLER
 # ═══════════════════════════════════════════════════════════
 
-class ADCController:
+class   ADCController:
     def __init__(self) -> None:
         self._config:   Optional[ADCConfig] = None
         self._parser    = ADCParser()
@@ -933,6 +953,7 @@ class MainView:
         central.pack(fill="both", expand=True)
 
         self._tipo_var = tk.StringVar(value="—")
+        self._local_var = tk.StringVar(value="—")
         self._id_var   = tk.StringVar(value="")
         tipo_frame = tk.Frame(central, bg="#f0f0f0")
         tipo_frame.pack(fill="x", pady=(0, 8))
@@ -944,7 +965,11 @@ class MainView:
                  font=("Segoe UI", 9, "bold")).pack(side="left")
         tk.Label(tipo_frame, textvariable=self._tipo_var, bg="#f0f0f0",
                  fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=6)
-        
+        tk.Label(tipo_frame, text="Local:", bg="#f0f0f0",
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        tk.Label(tipo_frame, textvariable=self._local_var, bg="#f0f0f0",
+                 
+                 fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=6)
         self.toggle_var = tk.BooleanVar()
         self.toggle_var.trace_add("write", lambda *_: self.toggle_comentarios())
 
@@ -978,15 +1003,18 @@ class MainView:
         self._frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
 
         # Tabela de encaminhamento: usa Treeview para facilitar atualizações
-        self._tabela_encaminhamento = ttk.Treeview(self._frame_tabela, columns=("Socket", "Rede", "IP", "Descrição"), show="headings", height=6)
+        self._tabela_encaminhamento = ttk.Treeview(self._frame_tabela, columns=("Socket", "Rede", "IP", "Descrição", "Recebe"), show="headings", height=6)
         self._tabela_encaminhamento.heading("Socket", text="Socket")
         self._tabela_encaminhamento.heading("Rede", text="Rede")
         self._tabela_encaminhamento.heading("IP", text="IP")
-        self._tabela_encaminhamento.heading("Descrição", text="Descrição")
+        self._tabela_encaminhamento.heading("Descrição", text="Aponta")
+        self._tabela_encaminhamento.heading("Recebe", text="Recebe")
+
         self._tabela_encaminhamento.column("Socket", width=40, anchor="w")
         self._tabela_encaminhamento.column("Rede", width=30, anchor="w")
         self._tabela_encaminhamento.column("IP", width=100, anchor="w")
-        self._tabela_encaminhamento.column("Descrição", width=200, anchor="w")
+        self._tabela_encaminhamento.column("Descrição", width=150, anchor="w")
+        self._tabela_encaminhamento.column("Recebe", width=200, anchor="w")
 
         vsb_enc = ttk.Scrollbar(self._frame_tabela, orient="vertical", command=self._tabela_encaminhamento.yview)
         self._tabela_encaminhamento.configure(yscrollcommand=vsb_enc.set)
@@ -999,10 +1027,30 @@ class MainView:
         self._frame_tabela.columnconfigure(1, weight=0)
         self._frame_tabela.rowconfigure(0, weight=1)
 
-
         # Ajuste de expansão
         lbf.columnconfigure(1, weight=1)
         self._frame_tabela.columnconfigure(1, weight=1)
+
+        # Informação de rodapé
+        self._programador = tk.StringVar(value="—")
+        self._revisor = tk.StringVar(value="—")
+        self._num_rev = tk.StringVar(value="—")
+
+        footer_frame = tk.Frame(central, bg="#f0f0f0")
+        footer_frame.pack(fill="x", pady=(8, 0))
+
+        tk.Label(footer_frame, text="Programador:", bg="#f0f0f0",
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        tk.Label(footer_frame, textvariable=self._programador, bg="#f0f0f0",
+                 fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=6)
+        tk.Label(footer_frame, text="Revisor:", bg="#f0f0f0",
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        tk.Label(footer_frame, textvariable=self._revisor, bg="#f0f0f0",
+                 fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=6)
+        tk.Label(footer_frame, text="Nº Revisão:", bg="#f0f0f0",
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        tk.Label(footer_frame, textvariable=self._num_rev, bg="#f0f0f0",
+                 fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=6)
 
         self.atualiza_campos_enderecamento()
         self.atualiza_dados_encaminhamento()
@@ -1044,6 +1092,9 @@ class MainView:
         # Se existir o Treeview, atualiza nele; caso contrário, nada a fazer.
         tabela = getattr(self, '_tabela_encaminhamento', None)
         enc = getattr(self._controller, '_encaminhamento', None)
+        config = getattr(self._controller, '_config', None)
+
+        regra_dict = {}
 
         if tabela is None:
             return
@@ -1052,15 +1103,30 @@ class MainView:
         for iid in tabela.get_children():
             tabela.delete(iid)
 
-        if enc is None:
-            tabela.insert("", "end", values=("", "", "Nenhum encaminhamento (não é configuração COM)"))
+        if enc is None or config is None:
+            tabela.insert("", "end", values=("", "", "Nenhum encaminhamento (não é configuração COM)", ""))
             self._status("Encaminhamento: nenhum (não-COM)")
             return
-        
+
+        if config:
+            abrigo = re.search(r"\((.*?)\)", config.local or "")
+            if abrigo:
+                destino_diag = abrigo.group(1)
+
+        for regra in enc.regras:
+            if regra.tipo == "ACD":
+                if regra.socket_id not in regra_dict:
+                    regra_dict[regra.socket_id] = "| "
+                regra_dict[regra.socket_id] += f"AEB{regra.can_tx_id} | "
+            elif regra.tipo == "DIAG":
+                if regra.socket_id not in regra_dict:
+                    regra_dict[regra.socket_id] = "| "
+                regra_dict[regra.socket_id] += f" FDS {destino_diag} | "
+
         # popular com destinos
         for destino in enc.destinos:
             ip_str = '.'.join(str(b) for b in destino.ip)
-            tabela.insert("", "end", values=(str(destino.socket_id), str(destino.rede), ip_str, destino.descricao))
+            tabela.insert("", "end", values=(str(destino.socket_id), str(destino.rede), ip_str, destino.descricao, regra_dict.get(destino.socket_id, "")))
 
         # status simples para debug/feedback
         try:
@@ -1114,6 +1180,10 @@ class MainView:
             return
         self._id_var.set(config.id or "—")
         self._tipo_var.set(config.tipo.name)
+        self._local_var.set(config.local or "—")
+        self._programador.set(config.programador or "—")
+        self._revisor.set(config.revisor or "—")
+        self._num_rev.set(config.num_rev or "—")
         self._form.renderizar_campos(config, self.toggle_var.get())
         self.atualiza_campos_enderecamento()
 

@@ -5,6 +5,8 @@ Diagrama: ADCConfig, Entrada, TipoDado, TipoADC, ADCParser, Validador,
 """
 
 from __future__ import annotations
+from trackplan_api import *
+from _mod_backup import open_fds_recovery
 
 import tkinter.font as tkfont
 import tkinter as tk
@@ -195,7 +197,7 @@ class EncaminhamentoCOM:
         self.regras.remove(regra)
 
     def agrupar_blocos_config(self, entradas: list[Entrada]) -> list[list[Entrada]]:
-        """Agrupa entradas do bloco CONFIG em [header, filho1, filho2, ...]."""
+        """COM::Agrupa entradas do bloco CONFIG em [header, filho1, filho2, ...]."""
         grupos, atual, comment_bin = [], [], []
         for e in entradas:
             if e.is_comment:
@@ -204,16 +206,16 @@ class EncaminhamentoCOM:
             if e.block != "CONFIG":
                 continue
             if e.cfg:
+                if not e.identificator.startswith(("CFG_INT_ID_DEST_NW", "CFG_FWRD_")):
+                    continue
                 if atual:
                     grupos.append(atual)
                 atual = [e]
-                if e.identificator.startswith("CFG_INT_ID_DEST_NW") or e.identificator.startswith("CFG_FWRD_"):
-                    atual.append(comment_bin.pop()) if comment_bin else None
+                atual.append(comment_bin.pop()) if comment_bin else None
             elif atual:
                 atual.insert(1, e)
         if atual:
             grupos.append(atual)
-
             comment_bin.clear()
         return grupos
 
@@ -232,6 +234,105 @@ class EncaminhamentoCOM:
     def remover_bloco(self, config: ADCConfig, grupo: list[Entrada]) -> None:
         for e in grupo:
             config.entradas.remove(e)
+
+@dataclass
+class AEB:
+    """Representa uma AEB"""
+    id: int
+    vinculos: list[fmaAEBVinculo] = field(default_factory=list)  # lista de vínculos com FMA
+
+@dataclass
+class fmaAEBVinculo:
+    """Representa um vínculo entre uma AEB e uma FMA"""
+    fma_tipo: int  # 1 ou 2
+    aeb: AEB
+    dir: str  # "Invertido" ou "Normal", indicando a inversão ou não do sensor
+    entrada: Entrada
+    descricao: str = ""
+
+class EncaminhamentoAEB:
+    def __init__(self, config: ADCConfig):
+        self.config = config
+        self.aebs = []
+        self.vinculos: list[fmaAEBVinculo] = []
+        self._comentario_fma1 = ""
+        self._comentario_fma2 = ""
+        self.carregar()
+
+    def carregar(self) -> None:
+        self.aebs.clear()
+        self.vinculos.clear()
+        self._comentario_fma1, self._comentario_fma2 = self._obter_primeiros_comentarios_fma(self.config.entradas)
+        for grupo in self.agrupar_blocos_config(self.config.entradas):
+            self._classificar(grupo)
+
+    def _obter_primeiros_comentarios_fma(self, entradas: list[Entrada]) -> tuple[str, str]:
+        """Retorna o primeiro comentário antes do primeiro bloco CFG_ZP_FMA1/2."""
+        comentario_fma1, comentario_fma2 = "", ""
+        comentarios_pendentes: list[str] = []
+
+        for e in entradas:
+            if e.is_comment:
+                comentarios_pendentes.append((e.comentario or "").strip())
+                continue
+            if e.block != "CONFIG":
+                continue
+            if e.cfg and e.identificator.startswith("CFG_ZP_FMA"):
+                if e.identificator == "CFG_ZP_FMA1" and not comentario_fma1 and comentarios_pendentes:
+                    comentario_fma1 = comentarios_pendentes[-1]
+                elif e.identificator == "CFG_ZP_FMA2" and not comentario_fma2 and comentarios_pendentes:
+                    comentario_fma2 = comentarios_pendentes[-1]
+                comentarios_pendentes.clear()
+
+        return comentario_fma1, comentario_fma2
+
+    def _classificar(self, grupo: list[Entrada]) -> None:
+        header = grupo[0]
+        invertido_ = 0
+        direcao = "Normal"
+        aeb = None
+        for filho in grupo[1:]:
+            if filho.identificator == "DIR_INV":
+                try:
+                    invertido_ = int(filho.valor)
+                    direcao = "Invertido" if invertido_ == 1 else "Normal"
+                except Exception:
+                    direcao = "Normal"
+            elif filho.identificator == "ID":
+                try:
+                    aeb_id = int(filho.valor)
+                except Exception:
+                    continue
+                aeb = next((a for a in self.aebs if a.id == aeb_id), None)
+                if not aeb:
+                    aeb = AEB(id=aeb_id)
+                    self.aebs.append(aeb)
+
+        if aeb is None:
+            return
+
+        vinculo = fmaAEBVinculo(fma_tipo=1 if header.identificator == "CFG_ZP_FMA1" else 2, aeb=aeb, entrada=grupo[1], dir=direcao, descricao=self._comentario_fma1 if header.identificator == "CFG_ZP_FMA1" else self._comentario_fma2)
+        self.vinculos.append(vinculo)
+
+    def agrupar_blocos_config(self, entradas: list[Entrada]) -> list[list[Entrada]]:
+        """AEB::Agrupa entradas do bloco CONFIG em [header, filho1, filho2, ...]."""
+        grupos, atual = [], []
+        for e in entradas:
+            if e.is_comment:
+                continue
+            if e.block != "CONFIG":
+                continue
+            if e.cfg:
+                if not e.identificator.startswith("CFG_ZP_FMA"):
+                    continue
+                if atual:
+                    grupos.append(atual)
+                atual = [e]
+            elif atual:
+                atual.insert(1, e)
+        if atual:
+            grupos.append(atual)
+        return grupos
 
 class SessionConfig:
     def __init__(self):
@@ -635,7 +736,7 @@ class   ADCController:
         self._validador = Validador()
         self._bd = BancoDadosConfig()
         self._sessao = SessionConfig()
-        self._encaminhamento: Optional[EncaminhamentoCOM] = None
+        self._encaminhamento: Optional[EncaminhamentoCOM | EncaminhamentoAEB] = None
 
     @property
     def sessao(self) -> Optional[SessionConfig]:
@@ -659,7 +760,7 @@ class   ADCController:
         sessao = self._garantir_sessao()
         sessao.adicionar_config(config) 
         self._config = config
-        self._encaminhamento = EncaminhamentoCOM(config) if config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
+        self._atualizar_encaminhamento()
 
     def carregar_arquivo(self, path: str) -> None:
         config = self._parser.parse(path)
@@ -667,13 +768,13 @@ class   ADCController:
         sessao = self._garantir_sessao()
         sessao.adicionar_config(config)
         self._config = config
-        self._encaminhamento = EncaminhamentoCOM(config) if config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
+        self._atualizar_encaminhamento()
 
     def trocar_config(self, id: str) -> None:
         if self._sessao is None:
             raise RuntimeError("Nenhuma sessão ativa.")
         self._config = self._sessao.selecionar(id)
-        self._encaminhamento = EncaminhamentoCOM(self._config) if self._config and self._config.tipo == TipoADC.COM else None #None, futuramente, será EncaminhamentoAEB
+        self._atualizar_encaminhamento()
 
     def remover_config(self, id: str) -> None:
         if self._sessao is None:
@@ -705,6 +806,16 @@ class   ADCController:
     def _garantir_config(self) -> None:
         if self._config is None:
             raise RuntimeError("Nenhuma configuracao carregada.")
+
+    def _atualizar_encaminhamento(self) -> None:
+        if self._config is None:
+            self._encaminhamento = None
+        elif self._config.tipo == TipoADC.COM:
+            self._encaminhamento = EncaminhamentoCOM(self._config)
+        elif self._config.tipo == TipoADC.AEB:
+            self._encaminhamento = EncaminhamentoAEB(self._config)
+        else:
+            raise ValueError(f"Tipo de ADC desconhecido: {self._config.tipo}")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -902,12 +1013,53 @@ class EntryPopup(tk.Entry):
 # VIEW — MainView
 # ═══════════════════════════════════════════════════════════
 
+class AutoWidthTreeview(ttk.Treeview):
+    def __init__(self, parent, columns, **kwargs):
+        super().__init__(parent, columns=columns, show="headings", **kwargs)
+        self.columns_list = columns
+        self.font = tkfont.nametofont("TkDefaultFont")
+
+        for col in columns:
+            self.heading(col, text=col)
+            self.column(col, anchor="w", width=100)
+
+    def _measure_text(self, text):
+        return self.font.measure(str(text)) + 20
+
+    def ajustar_larguras(self, rows):
+        widths = {}
+        for col in self.columns_list:
+            widths[col] = self._measure_text(col)
+
+        for row in rows:
+            for idx, col in enumerate(self.columns_list):
+                if idx < len(row):
+                    widths[col] = max(widths[col], self._measure_text(row[idx]))
+
+        for col, width in widths.items():
+            self.column(col, width=width, minwidth=width)
+
+    def popular(self, rows):
+        for item in self.get_children():
+            self.delete(item)
+
+        for row in rows:
+            self.insert("", "end", values=row)
+
+        self.ajustar_larguras(rows)
+
 class MainView:
     def __init__(self) -> None:
         self._controller = ADCController()
         self._root       = tk.Tk()
         self._form:  Optional[FormularioADC] = None
         self._status_var = tk.StringVar(value="Pronto.")
+        self._painel_dinamico: Optional[tk.Frame] = None
+        self._campos_enderecamento: dict[str, tk.StringVar] = {}
+        self._frame_tabela = None
+        self._frame_tabela_aeb = None
+        self._tabela_encaminhamento = None
+        self._tabela_aeb = None
 
     def iniciar(self) -> None:
         self._root.title("ADC System")
@@ -918,6 +1070,9 @@ class MainView:
         self._root.mainloop()
 
     def _construir_ui(self) -> None:
+        for widget in self._root.winfo_children():
+            widget.destroy()
+
         sidebar = tk.Frame(self._root, bg="#dde3ec", padx=8, pady=8)
         sidebar.pack(fill="y", side="left")
 
@@ -941,21 +1096,22 @@ class MainView:
             ("Abrir config",   self._on_abrir),
             ("Salvar",          self._on_salvar),
             ("Aplicar edicoes", self._on_aplicar),
+            ("Simular",          self._on_simular),
         ]:
             tk.Button(
                 toolbar, text=label, command=cmd,
-                relief="flat", bg="#4a6fa5", fg="white",
+                relief="raised", bg="#4a6fa5", fg="white",
                 activebackground="#3a5a8a", padx=10, pady=4,
-                font=("Segoe UI", 9),
+                font=("Segoe UI", 9), bd=2,
             ).pack(side="left", padx=4)
 
-        central = tk.Frame(self._root, bg="#f0f0f0", padx=12, pady=12)
-        central.pack(fill="both", expand=True)
+        self.central = tk.Frame(self._root, bg="#f0f0f0", padx=12, pady=12)
+        self.central.pack(fill="both", expand=True)
 
         self._tipo_var = tk.StringVar(value="—")
         self._local_var = tk.StringVar(value="—")
         self._id_var   = tk.StringVar(value="")
-        tipo_frame = tk.Frame(central, bg="#f0f0f0")
+        tipo_frame = tk.Frame(self.central, bg="#f0f0f0")
         tipo_frame.pack(fill="x", pady=(0, 8))
         tk.Label(tipo_frame, text="ID:", bg="#f0f0f0",
                  font=("Segoe UI", 9, "bold")).pack(side="left")
@@ -976,67 +1132,18 @@ class MainView:
         toggle = tk.Checkbutton(tipo_frame, text="Mostrar comentários", variable=self.toggle_var, bg="#f0f0f0", font=("Segoe UI", 9))
         toggle.pack(side="right", padx=6)
 
-        self._form = FormularioADC(central, self._controller, bg="#f0f0f0")
+        self._form = FormularioADC(self.central, self._controller, bg="#f0f0f0")
         self._form.pack(fill="both", expand=True)
 
-        lbf = tk.LabelFrame(central, text="Endereçamento", bg="#f0f0f0", font=("Segoe UI", 9, "bold"))
-        lbf.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self._campos_enderecamento: dict[str, tk.StringVar] = {}
-
-        campos = [
-            ("IP1", "ip1"),
-            ("IP2", "ip2"),
-            ("MÁSCARA", "mascara"),
-            ("DEFAULT GW", "gateway"),
-        ]
-
-        for linha, (texto, chave) in enumerate(campos):
-            ttk.Label(lbf, text=texto).grid(row=linha, column=0, sticky="w", padx=4)
-            var = tk.StringVar(value="—")
-            ttk.Entry(lbf, width=20, state="disabled", textvariable=var).grid(
-                row=linha, column=1, sticky="ew", padx=4
-            )
-            self._campos_enderecamento[chave] = var
-            
-        self._frame_tabela = ttk.Frame(lbf, relief="solid", borderwidth=1)
-        self._frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
-
-        # Tabela de encaminhamento: usa Treeview para facilitar atualizações
-        self._tabela_encaminhamento = ttk.Treeview(self._frame_tabela, columns=("Socket", "Rede", "IP", "Descrição", "Recebe"), show="headings", height=6)
-        self._tabela_encaminhamento.heading("Socket", text="Socket")
-        self._tabela_encaminhamento.heading("Rede", text="Rede")
-        self._tabela_encaminhamento.heading("IP", text="IP")
-        self._tabela_encaminhamento.heading("Descrição", text="Aponta")
-        self._tabela_encaminhamento.heading("Recebe", text="Recebe")
-
-        self._tabela_encaminhamento.column("Socket", width=40, anchor="w")
-        self._tabela_encaminhamento.column("Rede", width=30, anchor="w")
-        self._tabela_encaminhamento.column("IP", width=100, anchor="w")
-        self._tabela_encaminhamento.column("Descrição", width=150, anchor="w")
-        self._tabela_encaminhamento.column("Recebe", width=200, anchor="w")
-
-        vsb_enc = ttk.Scrollbar(self._frame_tabela, orient="vertical", command=self._tabela_encaminhamento.yview)
-        self._tabela_encaminhamento.configure(yscrollcommand=vsb_enc.set)
-
-        self._tabela_encaminhamento.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
-        vsb_enc.grid(row=0, column=2, sticky="ns")
-
-        # permitir que a tabela expanda corretamente
-        self._frame_tabela.columnconfigure(0, weight=1)
-        self._frame_tabela.columnconfigure(1, weight=0)
-        self._frame_tabela.rowconfigure(0, weight=1)
-
-        # Ajuste de expansão
-        lbf.columnconfigure(1, weight=1)
-        self._frame_tabela.columnconfigure(1, weight=1)
+        self._painel_dinamico = tk.Frame(self.central, bg="#f0f0f0")
+        self._painel_dinamico.pack(fill="both", expand=True)
 
         # Informação de rodapé
         self._programador = tk.StringVar(value="—")
         self._revisor = tk.StringVar(value="—")
         self._num_rev = tk.StringVar(value="—")
 
-        footer_frame = tk.Frame(central, bg="#f0f0f0")
+        footer_frame = tk.Frame(self.central, bg="#f0f0f0")
         footer_frame.pack(fill="x", pady=(8, 0))
 
         tk.Label(footer_frame, text="Programador:", bg="#f0f0f0",
@@ -1052,8 +1159,117 @@ class MainView:
         tk.Label(footer_frame, textvariable=self._num_rev, bg="#f0f0f0",
                  fg="#4a6fa5", font=("Segoe UI", 9)).pack(side="left", padx=6)
 
-        self.atualiza_campos_enderecamento()
-        self.atualiza_dados_encaminhamento()
+
+    def constroi_COM_tabela_encaminhamento(self) -> None:
+        self._limpar_painel_dinamico()
+
+        if self._painel_dinamico is None:
+            return
+
+        self.lbf_com = tk.LabelFrame(self._painel_dinamico, text="Endereçamento COM", bg="#f0f0f0", font=("Segoe UI", 9, "bold"))
+        self.lbf_com.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self._campos_enderecamento = {}
+
+        campos = [
+            ("IP1", "ip1"),
+            ("IP2", "ip2"),
+            ("MÁSCARA", "mascara"),
+            ("DEFAULT GW", "gateway"),
+        ]
+
+        for linha, (texto, chave) in enumerate(campos):
+            ttk.Label(self.lbf_com, text=texto).grid(row=linha, column=0, sticky="w", padx=4)
+            var = tk.StringVar(value="—")
+            ttk.Entry(self.lbf_com, width=20, state="disabled", textvariable=var).grid(
+                row=linha, column=1, sticky="ew", padx=4
+            )
+            self._campos_enderecamento[chave] = var
+            
+        self._frame_tabela = ttk.Frame(self.lbf_com, relief="solid", borderwidth=1)
+        self._frame_tabela.grid(row=len(campos), column=0, columnspan=2, sticky="nsew", padx=10, pady=15)
+
+        # Tabela de encaminhamento: usa Treeview para facilitar atualizações
+        self._tabela_encaminhamento = AutoWidthTreeview(self._frame_tabela, columns=("Socket", "Rede", "IP", "Descrição", "Recebe"), height=6)
+
+        vsb_enc = ttk.Scrollbar(self._frame_tabela, orient="vertical", command=self._tabela_encaminhamento.yview)
+        hsb_enc = ttk.Scrollbar(self._frame_tabela, orient="horizontal", command=self._tabela_encaminhamento.xview)
+        self._tabela_encaminhamento.configure(yscrollcommand=vsb_enc.set)
+        self._tabela_encaminhamento.configure(xscrollcommand=hsb_enc.set)
+
+        self._tabela_encaminhamento.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
+        vsb_enc.grid(row=0, column=2, sticky="ns")
+        hsb_enc.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        # permitir que a tabela expanda corretamente
+        self._frame_tabela.columnconfigure(0, weight=1)
+        self._frame_tabela.columnconfigure(1, weight=0)
+        self._frame_tabela.rowconfigure(0, weight=1)
+
+        # Ajuste de expansão
+        self.lbf_com.columnconfigure(1, weight=1)
+        self._frame_tabela.columnconfigure(1, weight=1)
+
+    def constroi_AEB_ui(self) -> None:
+        self._limpar_painel_dinamico()
+
+        if self._painel_dinamico is None:
+            return
+
+        self.lbf_aeb = tk.LabelFrame(self._painel_dinamico, text="Encaminhamento AEB", bg="#f0f0f0", font=("Segoe UI", 9, "bold"))
+        self.lbf_aeb.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self._frame_tabela_aeb = ttk.Frame(self.lbf_aeb, relief="solid", borderwidth=1)
+        self._frame_tabela_aeb.grid(row=0, column=0, sticky="nsew", padx=10, pady=15)
+
+        # Tabela de encaminhamento: usa Treeview para facilitar atualizações
+        self._tabela_aeb = AutoWidthTreeview(self._frame_tabela_aeb, columns=("FMA", "Id", "Direção", "Descrição"), height=6)
+
+        hsb_enc = ttk.Scrollbar(self._frame_tabela_aeb, orient="horizontal", command=self._tabela_aeb.xview)
+        vsb_enc = ttk.Scrollbar(self._frame_tabela_aeb, orient="vertical", command=self._tabela_aeb.yview)
+        self._tabela_aeb.configure(xscrollcommand=hsb_enc.set, yscrollcommand=vsb_enc.set)
+
+        self._tabela_aeb.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
+        vsb_enc.grid(row=0, column=2, sticky="ns")
+
+        # permitir que a tabela expanda corretamente
+        self._frame_tabela_aeb.columnconfigure(0, weight=1)
+        self._frame_tabela_aeb.columnconfigure(1, weight=0)
+        self._frame_tabela_aeb.rowconfigure(0, weight=1)
+
+        # Ajuste de expansão
+        self.lbf_aeb.columnconfigure(1, weight=1)
+        self._frame_tabela_aeb.columnconfigure(1, weight=1)
+
+    def atualiza_ui_aeb(self) -> None:
+        if not hasattr(self, "_tabela_aeb") or self._tabela_aeb is None:
+            return
+
+        tabela = getattr(self, '_tabela_aeb', None)
+        enc = getattr(self._controller, '_encaminhamento', None)
+
+        if tabela is None:
+            return
+
+        for iid in tabela.get_children():
+            tabela.delete(iid)
+
+        rows = []
+        if enc is None or self._controller.config is None:
+            rows = [("", "", "", "Nenhum encaminhamento (não é configuração AEB)"),]
+            tabela.popular(rows)
+            self._status("Encaminhamento: nenhum (AEB)")
+            return
+        
+        for vinculo in getattr(enc, 'vinculos', []):
+            rows.append((str(vinculo.fma_tipo), str(vinculo.aeb.id), str(vinculo.dir), str(vinculo.descricao)),)
+
+        self._tabela_aeb.popular(rows)
+
+        try:
+            self._status(f"Encaminhamento AEB: {len(getattr(enc, 'vinculos', []))} vínculo(s) mostrados")
+        except Exception:
+            pass
 
     def atualiza_campos_enderecamento(self) -> None:
         if not hasattr(self, "_campos_enderecamento"):
@@ -1104,7 +1320,7 @@ class MainView:
             tabela.delete(iid)
 
         if enc is None or config is None:
-            tabela.insert("", "end", values=("", "", "Nenhum encaminhamento (não é configuração COM)", ""))
+            tabela.popular([("", "", "Nenhum encaminhamento (não é configuração COM)", "")])
             self._status("Encaminhamento: nenhum (não-COM)")
             return
 
@@ -1123,10 +1339,13 @@ class MainView:
                     regra_dict[regra.socket_id] = "| "
                 regra_dict[regra.socket_id] += f" FDS {destino_diag} | "
 
-        # popular com destinos
+        # popular a tabela com destinos
+        rows = []
         for destino in enc.destinos:
-            ip_str = '.'.join(str(b) for b in destino.ip)
-            tabela.insert("", "end", values=(str(destino.socket_id), str(destino.rede), ip_str, destino.descricao, regra_dict.get(destino.socket_id, "")))
+            ip_str = ".".join(str(b) for b in destino.ip)
+            rows.append((str(destino.socket_id), str(destino.rede), ip_str, destino.descricao, regra_dict.get(destino.socket_id, "")))
+
+        self._tabela_encaminhamento.popular(rows)
 
         # status simples para debug/feedback
         try:
@@ -1141,13 +1360,12 @@ class MainView:
         for _, configs in [("Sessão atual", sessoes)]:
             if configs:
                 for session_id in configs:
-                    self.lista.insert(tk.END, session_id)
+                    config = sessoes[session_id]
+                    self.lista.insert(tk.END, f"{config.tipo.name}{session_id}")
             else:
                 self.lista.insert(tk.END, "—")
 
         self.lista.pack(fill="both", expand=True, pady=(8, 0))
-        self.atualiza_dados_encaminhamento()
-        self.atualiza_campos_enderecamento()
 
     def on_double_click_sessao(self, event) -> None:
         selection = self.lista.curselection()
@@ -1158,8 +1376,9 @@ class MainView:
         if session_id == "—":
             return
         try:
-            self._controller.trocar_config(session_id)
+            self._controller.trocar_config(session_id[3:])
             self.mostrar_config()
+            self.atualiza_sessoes()
             self._status(f"Sessão ativa: {session_id}")
         except Exception as exc:
             self._erro(exc)
@@ -1177,6 +1396,7 @@ class MainView:
     def mostrar_config(self) -> None:
         config = self._controller.config
         if config is None:
+            self._limpar_painel_dinamico()
             return
         self._id_var.set(config.id or "—")
         self._tipo_var.set(config.tipo.name)
@@ -1185,16 +1405,46 @@ class MainView:
         self._revisor.set(config.revisor or "—")
         self._num_rev.set(config.num_rev or "—")
         self._form.renderizar_campos(config, self.toggle_var.get())
-        self.atualiza_campos_enderecamento()
+        if config.tipo == TipoADC.COM:
+            self.constroi_COM_tabela_encaminhamento()
+            self.atualiza_campos_enderecamento()
+            self.atualiza_dados_encaminhamento()
+        elif config.tipo == TipoADC.AEB:
+            self.constroi_AEB_ui()
+            self.atualiza_ui_aeb()
+        else:
+            self._limpar_painel_dinamico()
+            self._status("Carregue uma configuração válida para visualizar endereçamento e encaminhamento.")
 
     def _on_nova_sessao(self) -> None:
         response = messagebox.askyesno("Confirmação", "Sua sessão atual será encerrada. Deseja continuar?")
         if not response:
             return
         self._controller.encerrar_sessao()
-        self.mostrar_config()
-        self.atualiza_sessoes()
+        self._reset_ui()
         self._status("Nova sessão criada.")
+
+    def _reset_ui(self) -> None:
+        self._form = None
+        self._campos_enderecamento = {}
+        self._frame_tabela = None
+        self._frame_tabela_aeb = None
+        self._tabela_encaminhamento = None
+        self._tabela_aeb = None
+        self._construir_ui()
+
+    def _limpar_painel_dinamico(self) -> None:
+        if self._painel_dinamico is None:
+            return
+
+        for widget in self._painel_dinamico.winfo_children():
+            widget.destroy()
+
+        self._campos_enderecamento = {}
+        self._frame_tabela = None
+        self._frame_tabela_aeb = None
+        self._tabela_encaminhamento = None
+        self._tabela_aeb = None
 
     def _on_nova_config(self) -> None:
         dialog = _DialogNovaConfig(self._root)
@@ -1242,6 +1492,29 @@ class MainView:
         try:
             self._controller.exportar(path)
             self._status(f"Salvo em: {path}")
+        except Exception as exc:
+            self._erro(exc)
+
+    def _on_simular(self) -> None:
+        if self._controller.config is None:
+            messagebox.showwarning("Aviso", "Nenhuma configuracao para simular.")
+            return
+        try:
+            filename = filedialog.askopenfilename(
+                title="Selecionar arquivo de simulacao",
+                filetypes=[("ZIP files", "*.zip"), ("Todos", "*.*")],
+            )
+
+            if not filename:
+                return
+
+            when_done = open_fds_recovery(filename)
+            print(when_done)
+
+
+            #self._controller.simular()
+            
+            self._status("Simulacao concluida com sucesso.")
         except Exception as exc:
             self._erro(exc)
 

@@ -1,0 +1,1039 @@
+#!/usr/bin/env python3
+"""
+API reutilizavel para Trackplan.xml.
+
+Este modulo concentra a logica que pode ser consumida por outros projetos:
+- leitura e parse de Trackplan.xml
+- geracao de Trackplan.xml
+- populacao de estado carregado para canvas/modelo
+- carregamento de imagens de ativos
+- geracao de imagens de FMA e helpers de animacao
+"""
+
+from __future__ import annotations
+
+import os
+import xml.dom.minidom
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple, Union
+
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    ImageTk = None
+
+try:
+    from .xml_utils import normalize_trackplan_order
+except Exception:
+    from xml_utils import normalize_trackplan_order
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _value_from_field(field: Any, default_value: Any) -> Any:
+    if field is None:
+        return default_value
+    if hasattr(field, "get"):
+        try:
+            value = field.get()
+            return value if value not in (None, "") else default_value
+        except Exception:
+            return default_value
+    return field if field not in (None, "") else default_value
+
+
+def _photoimage_from_pil(
+    pil_image: Any,
+    name_prefix: str = "image",
+    photoimage_factory: Optional[Callable[[Any, str], Any]] = None,
+) -> Any:
+    if pil_image is None:
+        return None
+
+    if photoimage_factory is not None:
+        return photoimage_factory(pil_image, name_prefix)
+
+    if PIL_AVAILABLE and ImageTk is not None:
+        return ImageTk.PhotoImage(pil_image)
+
+    return pil_image
+
+
+def _app_base_dir() -> Path:
+    return Path(getattr(__import__("sys"), "_MEIPASS", Path(__file__).resolve().parent))
+
+
+def resource_path(*parts: str) -> str:
+    return str(_app_base_dir().joinpath(*parts))
+
+
+@dataclass
+class TrackplanElementData:
+    xml_element: ET.Element
+    x: int = field(init=False)
+    y: int = field(init=False)
+    angle: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.x = _safe_int(self.xml_element.get("x", 0))
+        self.y = _safe_int(self.xml_element.get("y", 0))
+        self.angle = _safe_int(self.xml_element.get("angle", 0))
+
+
+@dataclass
+class RailData(TrackplanElementData):
+    rail_id: Optional[str] = field(init=False)
+    mirror: int = field(init=False)
+    rail_type: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rail_id = self.xml_element.get("id")
+        self.mirror = _safe_int(self.xml_element.get("mirror", 0))
+        self.rail_type = self.xml_element.get("type", "RAIL")
+
+
+@dataclass
+class LinkData(TrackplanElementData):
+    link_id: Optional[str] = field(init=False)
+    url: Optional[str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.link_id = self.xml_element.get("id")
+        self.url = self.xml_element.get("url")
+
+
+@dataclass
+class SensorData(TrackplanElementData):
+    sensor_id: Optional[str] = field(init=False)
+    name: str = field(init=False)
+    ref_id: Optional[str] = field(init=False)
+    fma0: Optional[str] = field(init=False)
+    fma1: Optional[str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.sensor_id = self.xml_element.get("id")
+        self.name = self.xml_element.get("name", f"S{self.sensor_id}")
+        self.ref_id = self.xml_element.get("refId", self.sensor_id)
+        self.fma0 = self.xml_element.get("fma0")
+        self.fma1 = self.xml_element.get("fma1")
+
+
+@dataclass
+class CrossingData(TrackplanElementData):
+    crossing_id: Optional[str] = field(init=False)
+    paths: list[dict[str, Optional[str]]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.crossing_id = self.xml_element.get("id")
+        self.paths = []
+        for path in self.xml_element.findall(".//Path"):
+            self.paths.append({"from": path.get("from"), "to": path.get("to")})
+
+
+@dataclass
+class FMAData(TrackplanElementData):
+    fma_id: Optional[str] = field(init=False)
+    name: str = field(init=False)
+    ref_id: str = field(init=False)
+    associated_sensors: list[dict[str, str]] = field(init=False)
+    associated_rails: list[dict[str, str]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.fma_id = self.xml_element.get("id")
+        self.name = self.xml_element.get("name", f"FMA{self.fma_id}")
+        self.ref_id = self.xml_element.get("refId", "")
+        self.associated_sensors = []
+        self.associated_rails = []
+
+        for rail_ref in self.xml_element.findall(".//Rails/Ref"):
+            rail_id = rail_ref.get("refId")
+            if not rail_id:
+                continue
+
+            item: dict[str, str] = {"refId": str(rail_id).strip()}
+
+            from_attr = rail_ref.get("from")
+            to_attr = rail_ref.get("to")
+            if from_attr is not None and str(from_attr).strip() != "":
+                item["from"] = str(from_attr).strip()
+            if to_attr is not None and str(to_attr).strip() != "":
+                item["to"] = str(to_attr).strip()
+            if "from" in item or "to" in item:
+                item["type"] = "crossing"
+
+            self.associated_rails.append(item)
+
+        sensor_nodes: list[ET.Element] = []
+        sensor_nodes.extend(self.xml_element.findall(".//Sensors/Ref"))
+        sensor_nodes.extend(self.xml_element.findall(".//Sensors/Sensor"))
+
+        for sref in sensor_nodes:
+            sid = sref.get("refId") or sref.get("id")
+            if not sid:
+                continue
+
+            pos = (sref.get("fmaPosition") or sref.get("position") or "").strip().lower()
+            if pos not in ("left", "right"):
+                pos = "right"
+
+            self.associated_sensors.append({"refId": str(sid), "fmaPosition": pos})
+
+
+@dataclass
+class TrackplanXMLData:
+    root: ET.Element
+    filename: str
+    rails: list[RailData] = field(init=False)
+    links: list[LinkData] = field(init=False)
+    sensors: list[SensorData] = field(init=False)
+    fmas: list[FMAData] = field(init=False)
+    crossings: list[CrossingData] = field(init=False)
+    rails_dict: dict[str, ET.Element] = field(init=False)
+    links_dict: dict[str, ET.Element] = field(init=False)
+    sensors_dict: dict[str, ET.Element] = field(init=False)
+    fmas_dict: dict[str, ET.Element] = field(init=False)
+    crossing_dict: dict[str, ET.Element] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.rails = [RailData(rail) for rail in self.root.findall(".//Rail")]
+        self.links = [LinkData(link) for link in self.root.findall(".//Link")]
+        self.sensors = [SensorData(sensor) for sensor in self.root.findall(".//Sensor")]
+        self.fmas = [FMAData(fma) for fma in self.root.findall(".//Fma")]
+        self.crossings = [CrossingData(crossing) for crossing in self.root.findall(".//Crossing")]
+
+        self.rails_dict = {rail.rail_id: rail.xml_element for rail in self.rails if rail.rail_id}
+        self.links_dict = {link.link_id: link.xml_element for link in self.links if link.link_id}
+        self.sensors_dict = {sensor.sensor_id: sensor.xml_element for sensor in self.sensors if sensor.sensor_id}
+        self.fmas_dict = {fma.fma_id: fma.xml_element for fma in self.fmas if fma.fma_id}
+        self.crossing_dict = {crossing.crossing_id: crossing.xml_element for crossing in self.crossings if crossing.crossing_id}
+
+
+@dataclass
+class TrackplanLoadedState:
+    elements: list[dict[str, Any]]
+    grid_width: int
+    grid_height: int
+    next_element_id: int
+    trackplan_data: dict[str, Any]
+
+
+@dataclass
+class TrackplanAssetBundle:
+    normal_images: dict[str, Any] = field(default_factory=dict)
+    blue_images: dict[str, Any] = field(default_factory=dict)
+    fma_preview_images: dict[str, Any] = field(default_factory=dict)
+    missing_images: list[str] = field(default_factory=list)
+    missing_blue_images: list[str] = field(default_factory=list)
+
+
+class TrackplanAPI:
+    """API reutilizavel para parsing, geracao e assets de Trackplan."""
+
+    @staticmethod
+    def parse_trackplan_xml(source: Union[str, bytes, ET.ElementTree, Any], filename: Optional[str] = None) -> TrackplanXMLData:
+        if isinstance(source, (ET.ElementTree, ET.Element)):
+            root = source.getroot() if isinstance(source, ET.ElementTree) else source
+            print(f"Encontrou element1 {root}, root_tag: {root.tag}")
+        if isinstance(source, bytes):
+            root = ET.fromstring(source)
+            return TrackplanXMLData(root, filename or "from_bytes")
+        print("Encontrou element2")
+        if isinstance(source, str):
+            tree = ET.parse(source)
+            return TrackplanXMLData(tree.getroot(), filename or source)
+        print("Encontrou element3")
+        tree = ET.parse(source)
+        return TrackplanXMLData(tree.getroot(), filename or getattr(source, "name", "from_file"))
+    @staticmethod
+    def populate_loaded_trackplan(xml_data: TrackplanXMLData) -> TrackplanLoadedState:
+        elements: list[dict[str, Any]] = []
+
+        for rail in xml_data.rails:
+            element = {
+                "type": "switch" if rail.rail_type == "SWITCH" else "rail",
+                "id": _safe_int(rail.rail_id, rail.rail_id),
+                "xml_id": rail.rail_id,
+                "x": rail.x,
+                "y": rail.y,
+                "angle": rail.angle,
+                "mirror": rail.mirror,
+                "rail_type": rail.rail_type,
+                "auto_rail": False,
+            }
+            elements.append(element)
+
+        for crossing in xml_data.crossings:
+            elements.append({
+                "type": "crossing",
+                "id": _safe_int(crossing.crossing_id, crossing.crossing_id),
+                "xml_id": crossing.crossing_id,
+                "x": crossing.x,
+                "y": crossing.y,
+                "angle": crossing.angle,
+            })
+
+        for link in xml_data.links:
+            elements.append({
+                "type": "link",
+                "id": _safe_int(link.link_id, link.link_id),
+                "xml_id": link.link_id,
+                "x": link.x,
+                "y": link.y,
+                "angle": link.angle,
+                "url": link.url,
+            })
+
+        for sensor in xml_data.sensors:
+            element = {
+                "type": "sensor",
+                "id": _safe_int(sensor.sensor_id, sensor.sensor_id),
+                "xml_id": sensor.sensor_id,
+                "x": sensor.x,
+                "y": sensor.y,
+                "angle": sensor.angle,
+                "name": sensor.name,
+                "ref_id": sensor.ref_id,
+            }
+            if sensor.fma0:
+                element["fma0"] = str(sensor.fma0)
+            if sensor.fma1:
+                element["fma1"] = str(sensor.fma1)
+            elements.append(element)
+
+        for fma in xml_data.fmas:
+            element = {
+                "type": "fma",
+                "id": _safe_int(fma.fma_id, fma.fma_id),
+                "xml_id": fma.fma_id,
+                "x": fma.x,
+                "y": fma.y,
+                "angle": fma.angle,
+                "name": fma.name,
+                "ref_id": fma.ref_id,
+                "associated_sensors": fma.associated_sensors,
+                "associated_rails": fma.associated_rails,
+            }
+            elements.append(element)
+
+        grid_width, grid_height = TrackplanAPI._infer_grid_dimensions(xml_data)
+        next_element_id = TrackplanAPI.update_next_element_id(elements)
+        trackplan_data = {
+            "root": xml_data.root,
+            "filename": xml_data.filename,
+            "fmas": xml_data.fmas_dict,
+            "sensors": xml_data.sensors_dict,
+            "rails": xml_data.rails_dict,
+            "links": xml_data.links_dict,
+        }
+
+        return TrackplanLoadedState(
+            elements=elements,
+            grid_width=grid_width,
+            grid_height=grid_height,
+            next_element_id=next_element_id,
+            trackplan_data=trackplan_data,
+        )
+
+    @staticmethod
+    def update_next_element_id(elements: Iterable[Mapping[str, Any]]) -> int:
+        max_base = 0
+        for element in elements:
+            raw_id = element.get("id")
+            if raw_id is None:
+                continue
+            text = str(raw_id)
+            if len(text) > 1 and text[0] in ("2", "3", "4") and text[1:].isdigit():
+                base = int(text[1:])
+            else:
+                digits = "".join(ch for ch in text if ch.isdigit())
+                if not digits:
+                    continue
+                try:
+                    base = int(digits)
+                except Exception:
+                    continue
+            max_base = max(max_base, base)
+        return max_base + 1 if max_base > 0 else 7000
+
+    @staticmethod
+    def build_trackplan_xml(
+        elements: Iterable[Mapping[str, Any]],
+        form_fields: Optional[Mapping[str, Any]] = None,
+        cubicles_data: Optional[Iterable[Mapping[str, Any]]] = None,
+        fds_model: str = "FDS101",
+        next_element_id: int = 7000,
+    ) -> str:
+        form_fields = form_fields or {}
+        cubicles_data = list(cubicles_data or [])
+        elements = list(elements or [])
+
+        trackplan_root = ET.Element("Trackplan")
+        trackplan_root.set("name", str(_value_from_field(form_fields.get("StationName"), "")).strip())
+        trackplan_root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
+        trackplan_root.set("xsi:noNamespaceSchemaLocation", "Trackplan.xsd")
+
+        selected_network = str(_value_from_field(form_fields.get("TrackplanNetwork"), "IP Rede1")).strip().lower()
+        use_net2 = "2" in selected_network
+
+        ip_field = "IpAddressNet2" if use_net2 else "IpAddressNet1"
+        mask_field = "MaskNet2" if use_net2 else "MaskNet1"
+        ip_default = "192.168.0.12" if use_net2 else "192.168.1.12"
+        mask_default = "255.255.255.0"
+
+        fds_elem = ET.SubElement(trackplan_root, "Fds")
+        fds_elem.set("name", str(_value_from_field(form_fields.get("FdsName"), "ABRIGO AREAIS")))
+        fds_elem.set("ip", str(_value_from_field(form_fields.get(ip_field), ip_default)))
+        fds_elem.set("netmask", str(_value_from_field(form_fields.get(mask_field), mask_default)))
+        fds_elem.set("version", str(_value_from_field(form_fields.get("ConfigVersion"), "1.0")))
+
+        stations_elem = ET.SubElement(trackplan_root, "Stations")
+        ET.SubElement(stations_elem, "ThisStation")
+
+        track_elem = ET.SubElement(trackplan_root, "Track")
+        track_elem.set("width", str(_value_from_field(form_fields.get("width_var"), "71")))
+        track_elem.set("height", str(_value_from_field(form_fields.get("height_var"), "16")))
+
+        real_rails = [e for e in elements if e.get("type") == "rail" and not e.get("auto_rail") and e.get("rail_type") != "SWITCH"]
+        switches = [e for e in elements if e.get("type") == "switch" or (e.get("type") == "rail" and e.get("rail_type") == "SWITCH")]
+        sensors = [e for e in elements if e.get("type") == "sensor"]
+        fmas = [e for e in elements if e.get("type") == "fma"]
+        links = [e for e in elements if e.get("type") == "link"]
+        crossings = [e for e in elements if e.get("type") == "crossing"]
+
+        real_rail_ids_in_xml = {str(r.get("id")) for r in real_rails}
+        real_rail_ids_in_xml |= {str(s.get("id")) for s in switches}
+        real_rail_ids_in_xml |= {str(l.get("id")) for l in links}
+        real_rail_ids_in_xml |= {str(c.get("id")) for c in crossings}
+
+        element_type_by_id: dict[str, Any] = {}
+        element_crossing_by_id: dict[str, Mapping[str, Any]] = {}
+        for element in elements:
+            eid = str(element.get("id", "")).strip()
+            if not eid:
+                continue
+            element_type_by_id[eid] = element.get("type")
+            if element.get("type") == "crossing":
+                element_crossing_by_id[eid] = element
+
+        created_auto_rails: dict[tuple[Any, Any], int] = {}
+
+        for link in links:
+            link_elem = ET.SubElement(track_elem, "Link")
+            link_elem.set("id", str(link.get("id")))
+            link_elem.set("url", str(link.get("url")))
+            link_elem.set("angle", str(link.get("angle")))
+            link_elem.set("x", str(link.get("x")))
+            link_elem.set("y", str(link.get("y")))
+
+        for crossing in crossings:
+            crossing_elem = ET.SubElement(track_elem, "Crossing")
+            crossing_elem.set("id", str(crossing.get("id")))
+            crossing_elem.set("angle", str(crossing.get("angle")))
+            crossing_elem.set("x", str(crossing.get("x")))
+            crossing_elem.set("y", str(crossing.get("y")))
+
+        for rail in real_rails:
+            rail_xml = ET.SubElement(track_elem, "Rail")
+            rail_xml.set("id", str(rail.get("id", "")))
+            rail_xml.set("angle", str(rail.get("angle", 0)))
+            rail_xml.set("mirror", str(rail.get("mirror", 0)))
+            rail_xml.set("x", str(rail.get("x", 0)))
+            rail_xml.set("y", str(rail.get("y", 0)))
+
+        for switch in switches:
+            rail_xml = ET.SubElement(track_elem, "Rail")
+            rail_xml.set("id", str(switch.get("id", "")))
+            rail_xml.set("type", "SWITCH")
+            rail_xml.set("angle", str(switch.get("angle", 0)))
+            rail_xml.set("mirror", str(switch.get("mirror", 0)))
+            rail_xml.set("x", str(switch.get("x", 0)))
+            rail_xml.set("y", str(switch.get("y", 0)))
+
+        for sensor in sensors:
+            position = (sensor.get("x"), sensor.get("y"))
+            rail_at_position = TrackplanAPI._find_real_rail_at_position(real_rails + switches, position)
+
+            sensor_xml = ET.SubElement(track_elem, "Sensor")
+            sensor_id = str(sensor.get("id", ""))
+            sensor_xml.set("id", sensor_id)
+            sensor_xml.set("angle", str(sensor.get("angle", 0)))
+            sensor_xml.set("x", str(sensor.get("x", 0)))
+            sensor_xml.set("y", str(sensor.get("y", 0)))
+
+            if sensor_id and sensor_id.startswith("2") and len(sensor_id) > 1:
+                ref_id_base = sensor_id[1:]
+                sensor_xml.set("name", f"ZP{ref_id_base}")
+                sensor_xml.set("refId", f"1{ref_id_base}")
+                if sensor.get("fma0"):
+                    sensor_xml.set("fma0", str(sensor.get("fma0")))
+                if sensor.get("fma1"):
+                    sensor_xml.set("fma1", str(sensor.get("fma1")))
+
+            if not rail_at_position and position not in created_auto_rails:
+                rail_angle, rail_mirror = TrackplanAPI._get_rail_config_for_sensor(sensor.get("angle", 0))
+                auto_rail_xml = ET.SubElement(track_elem, "Rail")
+                auto_rail_xml.set("id", str(next_element_id))
+                auto_rail_xml.set("angle", str(rail_angle))
+                auto_rail_xml.set("mirror", str(rail_mirror))
+                auto_rail_xml.set("x", str(sensor.get("x", 0)))
+                auto_rail_xml.set("y", str(sensor.get("y", 0)))
+                created_auto_rails[position] = next_element_id
+                next_element_id = 71000 if (next_element_id + 1) == 8000 else next_element_id + 1
+
+        for fma in fmas:
+            fma_xml = ET.SubElement(track_elem, "Fma")
+            fma_xml.set("id", str(fma.get("id", "")))
+            fma_xml.set("name", str(fma.get("name", f"FMA{fma.get('id')}")))
+            fma_xml.set("angle", str(fma.get("angle", 0)))
+            fma_xml.set("x", str(fma.get("x", 0)))
+            fma_xml.set("y", str(fma.get("y", 0)))
+
+            fma_id_str = str(fma.get("id", "")).strip()
+            if fma_id_str and len(fma_id_str) > 1:
+                if fma_id_str[0] in ("3", "4"):
+                    fma_xml.set("refId", f"2{fma_id_str[1:]}")
+                elif fma.get("ref_id"):
+                    fma_xml.set("refId", str(fma.get("ref_id")))
+
+            rails_refs_xml = ET.SubElement(fma_xml, "Rails")
+            added_ref_ids: set[str] = set()
+
+            if fma.get("associated_rails"):
+                for rail_ref in fma["associated_rails"]:
+                    rid = str(rail_ref.get("refId", "")).strip()
+                    if not rid:
+                        continue
+
+                    rtype = rail_ref.get("type") or element_type_by_id.get(rid)
+                    attrs = {"refId": rid}
+
+                    if rtype == "crossing":
+                        crossing_source = element_crossing_by_id.get(rid, {})
+                        from_value = rail_ref.get("from") if rail_ref.get("from") is not None else crossing_source.get("from")
+                        to_value = rail_ref.get("to") if rail_ref.get("to") is not None else crossing_source.get("to")
+                        if from_value is not None:
+                            attrs["from"] = str(from_value)
+                        if to_value is not None:
+                            attrs["to"] = str(to_value)
+
+                    if rid in real_rail_ids_in_xml or rtype == "crossing":
+                        if rid not in added_ref_ids:
+                            ET.SubElement(rails_refs_xml, "Ref", attrs)
+                            added_ref_ids.add(rid)
+
+            fma_position = (fma.get("x"), fma.get("y"))
+            real_here = TrackplanAPI._find_real_rail_at_position(real_rails + switches + crossings, fma_position)
+
+            if not real_here:
+                if fma_position not in created_auto_rails:
+                    rail_angle, rail_mirror = TrackplanAPI._get_rail_config_for_fma(fma.get("angle", 0))
+                    auto_rail_xml = ET.SubElement(track_elem, "Rail")
+                    auto_rail_xml.set("id", str(next_element_id))
+                    auto_rail_xml.set("angle", str(rail_angle))
+                    auto_rail_xml.set("mirror", str(rail_mirror))
+                    auto_rail_xml.set("x", str(fma.get("x", 0)))
+                    auto_rail_xml.set("y", str(fma.get("y", 0)))
+                    created_auto_rails[fma_position] = next_element_id
+                    next_element_id = 71000 if (next_element_id + 1) == 8000 else next_element_id + 1
+
+                auto_id = str(created_auto_rails[fma_position])
+                if auto_id not in added_ref_ids:
+                    ET.SubElement(rails_refs_xml, "Ref", {"refId": auto_id})
+                    added_ref_ids.add(auto_id)
+            else:
+                rid = str(real_here.get("id"))
+                if rid and rid not in added_ref_ids:
+                    ref_attrs = {"refId": rid}
+                    if real_here.get("type") == "crossing":
+                        crossing_source = element_crossing_by_id.get(rid, {})
+                        if crossing_source.get("from") is not None:
+                            ref_attrs["from"] = str(crossing_source.get("from"))
+                        if crossing_source.get("to") is not None:
+                            ref_attrs["to"] = str(crossing_source.get("to"))
+                    ET.SubElement(rails_refs_xml, "Ref", ref_attrs)
+                    added_ref_ids.add(rid)
+
+            if fma_position in created_auto_rails and not any(ref.get("refId") == str(created_auto_rails[fma_position]) for ref in rails_refs_xml.findall("Ref")):
+                ET.SubElement(rails_refs_xml, "Ref", {"refId": str(created_auto_rails[fma_position])})
+
+            if fma.get("associated_sensors"):
+                sensors_refs_xml = ET.SubElement(fma_xml, "Sensors")
+                for sensor_ref in fma["associated_sensors"]:
+                    sid = sensor_ref and sensor_ref.get("refId")
+                    if sid:
+                        ET.SubElement(sensors_refs_xml, "Ref", {
+                            "refId": str(sid),
+                            "fmaPosition": sensor_ref.get("fmaPosition", "right"),
+                        })
+
+        if cubicles_data:
+            cubicles_elem = ET.SubElement(trackplan_root, "Cubicles")
+            for cubicle in cubicles_data:
+                cubicle_xml = ET.SubElement(cubicles_elem, "Cubicle")
+                cubicle_xml.set("height", str(cubicle.get("height", "1")))
+                cubicle_xml.set("id", str(cubicle.get("id", "")))
+                cubicle_xml.set("name", str(cubicle.get("name", "")))
+
+                rack = cubicle.get("rack", {})
+                if rack:
+                    rack_xml = ET.SubElement(cubicle_xml, "Rack")
+                    rack_xml.set("id", str(rack.get("id", "")))
+
+                    bp = rack.get("bp", {})
+                    if bp:
+                        bp_xml = ET.SubElement(rack_xml, "Bp")
+                        bp_xml.set("id", str(bp.get("id", "")))
+                        bp_xml.set("size", str(bp.get("size", "13")))
+                        bp_xml.set("startSlot", str(bp.get("startSlot", "1")))
+
+                        slots = bp.get("slots", {})
+                        if slots:
+                            sorted_slots = sorted(slots.items(), key=lambda item: int(item[0]))
+                            for slot_id, slot in sorted_slots:
+                                slot_type = slot.get("type", "EmptySlot")
+                                slot_xml_id = slot.get("id", "")
+
+                                if slot_type == "Psc":
+                                    slot_xml = ET.SubElement(bp_xml, "Psc")
+                                    slot_xml.set("id", str(slot_xml_id))
+                                    slot_xml.set("slotId", str(slot_id))
+                                elif slot_type == "Com":
+                                    slot_xml = ET.SubElement(bp_xml, "Com")
+                                    slot_xml.set("id", str(slot_xml_id))
+                                    slot_xml.set("canId", str(slot.get("canId", "")))
+                                    slot_xml.set("type", "COM_FSE")
+                                    slot_xml.set("redundant", "NORMAL")
+                                    slot_xml.set("name", str(slot.get("name", "")))
+                                    slot_xml.set("slotId", str(slot_id))
+                                    slot_xml.text = "\n\t\t\t\t\t"
+                                elif slot_type == "Aeb":
+                                    slot_xml = ET.SubElement(bp_xml, "Aeb")
+                                    slot_xml.set("id", str(slot_xml_id))
+                                    slot_xml.set("name", str(slot.get("name", "")))
+                                    slot_xml.set("canId", str(slot.get("canId", "")))
+                                    slot_xml.set("refId", str(slot.get("refId", "")))
+                                    slot_xml.set("slotId", str(slot_id))
+                                elif slot_type == "IoExb":
+                                    slot_xml = ET.SubElement(bp_xml, "IoExb")
+                                    slot_xml.set("id", str(slot_xml_id))
+                                    slot_xml.set("name", "IO-EXB")
+                                    slot_xml.set("refId", str(slot.get("refId", "")))
+                                    slot_xml.set("slotId", str(slot_id))
+
+                                    if fds_model == "FDS102":
+                                        slot_xml_ext = ET.SubElement(slot_xml, "TrackSectionExtern")
+                                        slot_1 = ET.SubElement(slot_xml_ext, "FmaExtern")
+                                        slot_1.set("refId", f'3{slot_xml_id[1:]}')
+                                        slot_2 = ET.SubElement(slot_xml_ext, "FmaExtern")
+                                        slot_2.set("refId", f'4{slot_xml_id[1:]}')
+                                elif slot_type == "EmptySlot":
+                                    slot_xml = ET.SubElement(bp_xml, "EmptySlot")
+                                    slot_xml.set("id", str(slot_xml_id))
+                                    slot_xml.set("slotId", str(slot_id))
+
+        if trackplan_root.find("Supervisors") is None:
+            ET.SubElement(trackplan_root, "Supervisors")
+        if trackplan_root.find("Cubicles") is None:
+            ET.SubElement(trackplan_root, "Cubicles")
+
+        normalize_trackplan_order(trackplan_root)
+        return TrackplanAPI._prettify_xml(trackplan_root)
+
+    @staticmethod
+    def write_trackplan_xml(filename: str, *args: Any, **kwargs: Any) -> str:
+        xml_text = TrackplanAPI.build_trackplan_xml(*args, **kwargs)
+        with open(filename, "w", encoding="utf-8") as handle:
+            handle.write(xml_text)
+        return filename
+
+    @staticmethod
+    def load_element_images(
+        images_dir: Optional[Union[str, Path]] = None,
+        blue_images_dir: Optional[Union[str, Path]] = None,
+        grid_size: int = 30,
+        fds_model: str = "FDS101",
+        photoimage_factory: Optional[Callable[[Any, str], Any]] = None,
+    ) -> TrackplanAssetBundle:
+        bundle = TrackplanAssetBundle()
+
+        if not PIL_AVAILABLE:
+            return bundle
+
+        images_dir = Path(images_dir or resource_path("images"))
+        blue_images_dir = Path(blue_images_dir or images_dir / "blue")
+
+        if not images_dir.exists():
+            images_dir.mkdir(parents=True, exist_ok=True)
+        if not blue_images_dir.exists():
+            blue_images_dir.mkdir(parents=True, exist_ok=True)
+
+        image_size = grid_size
+        image_files: dict[str, str] = {}
+
+        for angle in [0, 45, 90, 180, 225, 270, 315]:
+            for mirror in [0, 1]:
+                image_files[f"rail_{angle}_{mirror}"] = f"rail_{angle}_{mirror}.png"
+
+        for angle in [0, 90, 180, 270]:
+            image_files[f"link_{angle}"] = f"link_{angle}.png"
+
+        for angle in [0, 90, 270]:
+            image_files[f"crossing_{angle}"] = f"crossing_{angle}.png"
+
+        for angle in [0, 45, 90, 180, 225]:
+            for mirror in [0, 1]:
+                image_files[f"switch_{angle}_{mirror}"] = f"switch_{angle}_{mirror}.png"
+
+        for angle in [0, 45, 90, 135, 180, 225, 270, 315]:
+            image_files[f"sensor_{angle}"] = f"sensor_{angle}.png"
+
+        for key, filename in image_files.items():
+            image_path = images_dir / filename
+            if not image_path.exists():
+                bundle.missing_images.append(filename)
+                continue
+            try:
+                img = Image.open(image_path)
+                img = img.resize((image_size, image_size), Image.Resampling.LANCZOS)
+                bundle.normal_images[key] = _photoimage_from_pil(img, f"element_{key}", photoimage_factory)
+            except Exception:
+                bundle.missing_images.append(filename)
+
+        for key, filename in image_files.items():
+            blue_path = blue_images_dir / filename
+            if not blue_path.exists():
+                bundle.missing_blue_images.append(filename)
+                continue
+            try:
+                img = Image.open(blue_path)
+                img = img.resize((image_size, image_size), Image.Resampling.LANCZOS)
+                bundle.blue_images[key] = _photoimage_from_pil(img, f"blue_{key}", photoimage_factory)
+            except Exception:
+                bundle.missing_blue_images.append(filename)
+
+        for angle in ([0, 90, 180, 270] if fds_model == "FDS101" else [0, 45, 90, 135, 180, 225, 270, 315]):
+            preview = TrackplanAPI.create_fma_image_with_integrated_text(angle, "FMA", photoimage_factory)
+            if preview is not None:
+                bundle.fma_preview_images[f"fma_{angle}_PREV"] = preview
+
+        return bundle
+
+    @staticmethod
+    def animate_fma_highlight(
+        canvas: Any,
+        scheduler: Any,
+        element: Mapping[str, Any],
+        blue_image: Any,
+        restore_image_fn: Optional[Callable[[Mapping[str, Any]], None]] = None,
+        duration_ms: int = 3000,
+    ) -> bool:
+        canvas_id = element.get("canvas_id")
+        if not canvas_id:
+            return False
+
+        canvas.itemconfig(canvas_id, image=blue_image)
+
+        if duration_ms > 0 and restore_image_fn is not None and scheduler is not None and hasattr(scheduler, "after"):
+            scheduler.after(duration_ms, lambda: restore_image_fn(element))
+
+        return True
+
+    @staticmethod
+    def create_fma_image_with_integrated_text(
+        angle: int,
+        text: str,
+        photoimage_factory: Optional[Callable[[Any, str], Any]] = None,
+    ) -> Any:
+        if not PIL_AVAILABLE:
+            return None
+
+        try:
+            img = Image.new("RGBA", (30, 30), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+
+            if angle in (0, 180):
+                for y in range(13, 17):
+                    draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+            elif angle in (90, 270):
+                for x in range(13, 17):
+                    draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+            elif angle in (45, 225):
+                draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+            elif angle in (135, 315):
+                draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
+
+            box_config = {
+                0: {"type": "rect", "x1": 2, "y1": 18, "x2": 29, "y2": 28, "text_rot": 0},
+                90: {"type": "rect", "x1": 18, "y1": 2, "x2": 28, "y2": 29, "text_rot": 90},
+                180: {"type": "rect", "x1": 2, "y1": 3, "x2": 29, "y2": 13, "text_rot": 0},
+                270: {"type": "rect", "x1": 3, "y1": 2, "x2": 13, "y2": 29, "text_rot": -90},
+                45: {"type": "poly", "cx": 16, "cy": 14, "w": 13, "h": 6, "text_rot": 45},
+                135: {"type": "poly", "cx": 20, "cy": 20, "w": 13, "h": 6, "text_rot": 135},
+                225: {"type": "poly", "cx": 14, "cy": 16, "w": 13, "h": 6, "text_rot": 45},
+                315: {"type": "poly", "cx": 10, "cy": 10, "w": 13, "h": 6, "text_rot": 135},
+            }
+
+            cfg = box_config.get(angle, box_config[0])
+
+            def diagonal_box(cx: float, cy: float, angle_deg: float, length: float = 10, thickness: float = 4) -> list[tuple[float, float]]:
+                import math
+
+                radians = math.radians(angle_deg)
+                dx = math.cos(radians)
+                dy = math.sin(radians)
+                px = -dy
+                py = dx
+                half_length = length / 2
+                half_thickness = thickness / 2
+                return [
+                    (cx - dx * half_length - px * half_thickness, cy - dy * half_length - py * half_thickness),
+                    (cx + dx * half_length - px * half_thickness, cy + dy * half_length - py * half_thickness),
+                    (cx + dx * half_length + px * half_thickness, cy + dy * half_length + py * half_thickness),
+                    (cx - dx * half_length + px * half_thickness, cy - dy * half_length + py * half_thickness),
+                ]
+
+            if cfg["type"] == "rect":
+                draw.rectangle([(cfg["x1"], cfg["y1"]), (cfg["x2"], cfg["y2"])], outline=(0, 0, 0), fill=(255, 255, 255))
+                text_cx = (cfg["x1"] + cfg["x2"]) // 2
+                text_cy = (cfg["y1"] + cfg["y2"]) // 2
+            else:
+                pts = diagonal_box(cfg["cx"], cfg["cy"], angle, length=12, thickness=4)
+                draw.polygon(pts, outline=(0, 0, 0), fill=(255, 255, 255))
+                text_cx, text_cy = cfg["cx"], cfg["cy"]
+
+            try:
+                font = ImageFont.truetype("arial.ttf", 8)
+            except Exception:
+                font = ImageFont.load_default()
+
+            if cfg["text_rot"] == 0:
+                draw.text((text_cx, text_cy), text, fill=(0, 0, 0), font=font, anchor="mm")
+            else:
+                temp_img = Image.new("RGBA", (50, 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                temp_draw.text((25, 25), text, fill=(0, 0, 0), font=font, anchor="mm")
+                temp_img = temp_img.rotate(-angle, expand=True)
+                width, height = temp_img.size
+                img.paste(temp_img, (int(text_cx - width / 2), int(text_cy - height / 2)), temp_img)
+
+            return _photoimage_from_pil(img, f"fma_{angle}_{text}", photoimage_factory)
+        except Exception:
+            return None
+
+    @staticmethod
+    def create_fma_blue_image_with_integrated_text(
+        angle: int,
+        text: str,
+        photoimage_factory: Optional[Callable[[Any, str], Any]] = None,
+    ) -> Any:
+        if not PIL_AVAILABLE:
+            return None
+
+        try:
+            img = Image.new("RGBA", (30, 30), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+
+            text_areas = {
+                0: {"x1": 2, "y1": 18, "x2": 29, "y2": 28},
+                45: {"x1": 2, "y1": 18, "x2": 13, "y2": 28},
+                90: {"x1": 18, "y1": 2, "x2": 28, "y2": 29},
+                135: {"x1": 17, "y1": 18, "x2": 28, "y2": 28},
+                180: {"x1": 2, "y1": 3, "x2": 29, "y2": 13},
+                225: {"x1": 17, "y1": 2, "x2": 28, "y2": 13},
+                270: {"x1": 3, "y1": 2, "x2": 13, "y2": 29},
+                315: {"x1": 2, "y1": 2, "x2": 13, "y2": 13},
+            }
+
+            if angle not in text_areas:
+                angle = 0
+
+            area = text_areas[angle]
+
+            if angle in (0, 180):
+                for y in range(13, 17):
+                    draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+            elif angle in (90, 270):
+                for x in range(13, 17):
+                    draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+            elif angle in (45, 225):
+                draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+            elif angle in (135, 315):
+                draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
+
+            if angle in (45, 135, 225, 315):
+                rotated_boxes = {
+                    45: {"cx": 20, "cy": 10, "w": 14, "h": 7, "angle": 45},
+                    135: {"cx": 20, "cy": 20, "w": 14, "h": 7, "angle": 135},
+                    225: {"cx": 10, "cy": 20, "w": 14, "h": 7, "angle": 45},
+                    315: {"cx": 10, "cy": 10, "w": 14, "h": 7, "angle": 135},
+                }
+                box = rotated_boxes[angle]
+                TrackplanAPI._draw_rotated_rect(
+                    draw,
+                    cx=box["cx"],
+                    cy=box["cy"],
+                    width=box["w"],
+                    height=box["h"],
+                    angle_deg=box["angle"],
+                    outline=(0, 0, 0, 255),
+                    fill=(255, 255, 255, 255),
+                )
+            else:
+                draw.rectangle([(area["x1"], area["y1"]), (area["x2"], area["y2"])], outline=(0, 0, 0, 255), width=1, fill=(255, 255, 255, 255))
+
+            try:
+                font = ImageFont.truetype("arial.ttf", 4)
+            except Exception:
+                font = ImageFont.load_default()
+
+            text_center_x = (area["x1"] + area["x2"]) // 2
+            text_center_y = (area["y1"] + area["y2"]) // 2
+
+            if angle == 90:
+                temp_img = Image.new("RGBA", (50, 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                temp_draw.text((25, 25), text, fill=(0, 0, 0, 255), font=font, anchor="mm")
+                temp_img = temp_img.rotate(-90, expand=False)
+                img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
+            elif angle == 270:
+                temp_img = Image.new("RGBA", (50, 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                temp_draw.text((25, 25), text, fill=(0, 0, 0, 255), font=font, anchor="mm")
+                temp_img = temp_img.rotate(90, expand=False)
+                img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
+            else:
+                draw.text((text_center_x, text_center_y), text, fill=(0, 0, 0, 255), font=font, anchor="mm")
+
+            return _photoimage_from_pil(img, f"fma_blue_{angle}_{text}", photoimage_factory)
+        except Exception:
+            return None
+
+    @staticmethod
+    def get_auto_rail_config(element_type: str, element_angle: Any) -> Tuple[int, int]:
+        config = {
+            "sensor": {
+                0: (0, 0), 45: (270, 0), 90: (180, 0), 135: (270, 1),
+                180: (0, 0), 225: (270, 0), 270: (180, 0), 315: (270, 1),
+            },
+            "fma": {
+                0: (0, 0), 45: (270, 0), 90: (180, 0), 135: (270, 1),
+                180: (0, 0), 225: (270, 0), 270: (180, 0), 315: (270, 1),
+            },
+        }
+        try:
+            angle_int = int(element_angle)
+            return config.get(element_type, {}).get(angle_int, (angle_int, 0))
+        except Exception:
+            return (0, 0)
+
+    @staticmethod
+    def _infer_grid_dimensions(xml_data: TrackplanXMLData) -> tuple[int, int]:
+        track_elem = xml_data.root.find(".//Track")
+        width_val = None
+        height_val = None
+
+        if track_elem is not None:
+            try:
+                if str(track_elem.get("width", "")).strip():
+                    width_val = int(str(track_elem.get("width")).strip())
+            except Exception:
+                width_val = None
+            try:
+                if str(track_elem.get("height", "")).strip():
+                    height_val = int(str(track_elem.get("height")).strip())
+            except Exception:
+                height_val = None
+
+        if width_val is None or height_val is None:
+            max_x = -1
+            max_y = -1
+            try:
+                if xml_data.rails:
+                    max_x = max(max_x, max(rail.x for rail in xml_data.rails))
+                    max_y = max(max_y, max(rail.y for rail in xml_data.rails))
+                if xml_data.sensors:
+                    max_x = max(max_x, max(sensor.x for sensor in xml_data.sensors))
+                    max_y = max(max_y, max(sensor.y for sensor in xml_data.sensors))
+                if xml_data.fmas:
+                    max_x = max(max_x, max(fma.x for fma in xml_data.fmas))
+                    max_y = max(max_y, max(fma.y for fma in xml_data.fmas))
+            except Exception:
+                pass
+
+            if width_val is None:
+                width_val = max_x if max_x >= 0 else 71
+            if height_val is None:
+                height_val = max_y if max_y >= 0 else 16
+
+        return width_val if width_val is not None else 71, height_val if height_val is not None else 16
+
+    @staticmethod
+    def _find_real_rail_at_position(elements: Iterable[Mapping[str, Any]], position: Tuple[Any, Any]) -> Optional[Mapping[str, Any]]:
+        if not position or len(position) != 2:
+            return None
+        x, y = position
+        for element in elements:
+            if element.get("x") == x and element.get("y") == y:
+                return element
+        return None
+
+    @staticmethod
+    def _get_rail_config_for_sensor(sensor_angle: Any) -> Tuple[int, int]:
+        return TrackplanAPI.get_auto_rail_config("sensor", sensor_angle)
+
+    @staticmethod
+    def _get_rail_config_for_fma(fma_angle: Any) -> Tuple[int, int]:
+        return TrackplanAPI.get_auto_rail_config("fma", fma_angle)
+
+    @staticmethod
+    def _draw_rotated_rect(draw: Any, cx: float, cy: float, width: float, height: float, angle_deg: float, outline: Any, fill: Any, line_width: int = 1) -> None:
+        import math
+
+        angle_rad = math.radians(angle_deg)
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        hw, hh = width / 2, height / 2
+
+        corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+        rotated = [(cx + x * cos_a - y * sin_a, cy + x * sin_a + y * cos_a) for x, y in corners]
+        draw.polygon(rotated, outline=outline, fill=fill)
+
+    @staticmethod
+    def _prettify_xml(element: ET.Element) -> str:
+        rough_string = ET.tostring(element, encoding="unicode")
+        reparsed = xml.dom.minidom.parseString(rough_string)
+        return reparsed.toprettyxml(indent="\t", encoding=None)
+
+
+__all__ = [
+    "PIL_AVAILABLE",
+    "TrackplanAPI",
+    "TrackplanAssetBundle",
+    "TrackplanElementData",
+    "TrackplanLoadedState",
+    "TrackplanXMLData",
+    "RailData",
+    "LinkData",
+    "SensorData",
+    "CrossingData",
+    "FMAData",
+    "normalize_trackplan_order",
+    "resource_path",
+]

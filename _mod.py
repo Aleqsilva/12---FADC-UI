@@ -9,6 +9,7 @@ from PIL import Image, ImageTk
 try:
     from trackplan_api import TrackplanAPI as TrackplanService
     from trackplan_api import TrackplanXMLData, TrackplanLoadedState, TrackplanAssetBundle
+    from trackplan_api import TrackplanDesignerView
     TRACKPLAN_AVAILABLE = True
 except ImportError:
     TRACKPLAN_AVAILABLE = False
@@ -32,7 +33,7 @@ _loaded_data = None  # TrackplanLoadedState
 _element_images = None  # TrackplanAssetBundle
 
 def create_canvas_toplevel(root):
-    return TrackplanService.create_trackplan_canvas(root)
+    return TrackplanDesignerView(root)
 
 def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
     global _loaded_data, _element_images
@@ -79,6 +80,7 @@ def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
 
             return {
                 'success': True,
+                'xml_data': xml_data,
                 'trackplan_data': _loaded_data,
                 'fds_config_data': fds_config_content,
                 'element_images': _element_images,

@@ -16,7 +16,7 @@ import os
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple, Union
@@ -1024,9 +1024,16 @@ class TrackplanAPI:
 
     # ========== CANVAS =========
 
-    def create_trackplan_canvas(root):
+class TrackplanDesignerView():
+
+    def __init__(self, root):
+        self.root = root
+        self.image_registry = {}
+        self.fds_model = "FDS101"
+        
+    def create_trackplan_canvas(self):
         """Cria a aba do designer de Trackplan minimalista com foco na grade"""
-        frame = ttk.Frame(root)
+        frame = ttk.Frame(self.root)
         
         # === TOOLBAR COMPACTA NO TOPO ===
         toolbar = ttk.Frame(frame, padding="3")
@@ -1040,16 +1047,16 @@ class TrackplanAPI:
         fds_name_frame.grid_columnconfigure(1, weight=1)
 
         # Variável para o nome do FDS
-        trackplan_fds_name_var = tk.StringVar()
+        self.trackplan_fds_name_var = tk.StringVar()
 
         # Label que mostra o nome do FDS
-        fds_name_label = ttk.Label(fds_name_frame, 
-                                    textvariable=trackplan_fds_name_var,
+        self.fds_name_label = ttk.Label(fds_name_frame, 
+                                    textvariable=self.trackplan_fds_name_var,
                                     font=("Segoe UI", 11, "bold"), 
                                     foreground="#1e3a5f",
                                     background="#f0f0f0",
                                     anchor="e")
-        fds_name_label.grid(row=0, column=1, padx=5, pady=5, sticky="")
+        self.fds_name_label.grid(row=0, column=1, padx=5, pady=5, sticky="")
 
         # Atualizar nome inicial
         #self.update_trackplan_fds_name()  necessário reescrever função
@@ -1059,16 +1066,16 @@ class TrackplanAPI:
         canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Canvas principal ocupando toda a área restante
-        trackplan_canvas = tk.Canvas(canvas_frame, bg="white", scrollregion=(0, 0, 2400, 800))
+        self.trackplan_canvas = tk.Canvas(canvas_frame, bg="white", scrollregion=(0, 0, 2400, 800))
         
         # Scrollbars
-        h_scrollbar = ttk.Scrollbar(canvas_frame, orient="horizontal", command=trackplan_canvas.xview)
-        v_scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=trackplan_canvas.yview)
+        h_scrollbar = ttk.Scrollbar(canvas_frame, orient="horizontal", command=self.trackplan_canvas.xview)
+        v_scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=self.trackplan_canvas.yview)
         
-        trackplan_canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
+        self.trackplan_canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
         
         # Layout em grade
-        trackplan_canvas.grid(row=0, column=0, sticky="nsew")
+        self.trackplan_canvas.grid(row=0, column=0, sticky="nsew")
         h_scrollbar.grid(row=1, column=0, sticky="ew")
         v_scrollbar.grid(row=0, column=1, sticky="ns")
         
@@ -1076,26 +1083,156 @@ class TrackplanAPI:
         canvas_frame.grid_columnconfigure(0, weight=1)
         
         # === CONFIGURAR EVENTOS ===
-        trackplan_canvas.bind("<Button-1>", on_canvas_click_with_focus)
+        self.trackplan_canvas.bind("<Button-1>", self.on_canvas_click_with_focus)
         
         # === INICIALIZAR SISTEMA ===
-        initialize_trackplan_system()
+        self.initialize_trackplan_system()
         
         # Variáveis adicionais para grade (ANTES de apply_grid)
         self.width_var = tk.StringVar(value="30")
         self.height_var = tk.StringVar(value="10")
-        
-        # ADICIONAR ESTAS LINHAS:
-        self.form_fields["width_var"] = self.width_var
-        self.form_fields["height_var"] = self.height_var
-
+ 
         # Forçar atualização da interface antes de aplicar a grade
-        root.update_idletasks()
+        self.root.update_idletasks()
         
         # Aplicar grade e atualizar preview com delay
-        root.after(root, 100, self.apply_grid_delayed)
+        self.root.after(100, self.apply_grid_delayed)
 
-    def apply_grid_delayed(self, root):
+
+    def _apply_trackplan_dimensions(self, xml_data):
+        """Aplica as dimensões do trackplan à grade"""
+        track_elem = xml_data.root.find(".//Track")
+
+        width_val = None
+        height_val = None
+
+        if track_elem is not None:
+            w_attr = track_elem.get("width")
+            h_attr = track_elem.get("height")
+            # Tentar converter atributos para int
+            try:
+                if w_attr is not None and str(w_attr).strip() != "":
+                    width_val = int(str(w_attr).strip())
+            except Exception:
+                width_val = None
+            try:
+                if h_attr is not None and str(h_attr).strip() != "":
+                    height_val = int(str(h_attr).strip())
+            except Exception:
+                height_val = None
+
+            # Fallback: calcular a partir dos elementos, se necessário
+            if width_val is None or height_val is None:
+                max_x = -1
+                max_y = -1
+                try:
+                    if xml_data.rails:
+                        max_x = max(max_x, max(r.x for r in xml_data.rails))
+                        max_y = max(max_y, max(r.y for r in xml_data.rails))
+                    if xml_data.sensors:
+                        max_x = max(max_x, max(s.x for s in xml_data.sensors))
+                        max_y = max(max_y, max(s.y for s in xml_data.sensors))
+                    if xml_data.fmas:
+                        max_x = max(max_x, max(f.x for f in xml_data.fmas))
+                        max_y = max(max_y, max(f.y for f in xml_data.fmas))
+                except Exception as e:
+                    print(f"Falha ao calcular dimensões pelo conteúdo: {e}")
+
+                if width_val is None and max_x >= 0:
+                    width_val = max_x
+                if height_val is None and max_y >= 0:
+                    height_val = max_y
+
+            # Defaults finais se ainda não definidos
+            if width_val is None:
+                width_val = 71
+            if height_val is None:
+                height_val = 16
+
+            self.width_var.set(str(width_val))
+            self.height_var.set(str(height_val))
+            self.apply_grid()
+        else:
+            print("Elemento Track não encontrado, usando dimensões padrão 71x16")
+            self.width_var.set("71")
+            self.height_var.set("16")
+            self.apply_grid()
+
+    def apply_grid(self):
+        """Aplica a grade com números clicáveis nas margens"""
+        try:
+            # Valores inseridos pelo usuário são as coordenadas máximas desejadas
+            max_col = int(self.width_var.get())
+            max_row = int(self.height_var.get())
+        except ValueError:
+            messagebox.showerror("Erro", "Coluna e linha máximas devem ser números inteiros")
+            return
+        
+        # Limpar canvas (grade, números e highlights)
+        self.trackplan_canvas.delete("grid")
+        self.trackplan_canvas.delete("grid_numbers")
+        self.trackplan_canvas.delete("row_highlight")
+        self.trackplan_canvas.delete("column_highlight")
+        
+        # Calcular dimensões reais
+        actual_width = max_col + 1
+        actual_height = max_row + 1
+        
+        # Configurar região de scroll
+        total_width = (actual_width + 1) * self.grid_size + 100
+        total_height = (actual_height + 1) * self.grid_size + 100
+        self.trackplan_canvas.configure(scrollregion=(0, 0, total_width, total_height))
+        
+        # Desenhar linhas apenas se visível
+        if getattr(self, 'grid_visible', True):
+            for x in range(actual_width + 1):
+                x_pos = (x + 1) * self.grid_size
+                self.trackplan_canvas.create_line(
+                    x_pos, self.grid_size, x_pos, (actual_height + 1) * self.grid_size,
+                    fill="gray", tags="grid"
+                )
+            
+            for y in range(actual_height + 1):
+                y_pos = (y + 1) * self.grid_size
+                self.trackplan_canvas.create_line(
+                    self.grid_size, y_pos, (actual_width + 1) * self.grid_size, y_pos,
+                    fill="gray", tags="grid"
+                )
+    
+        # Números das colunas
+        for x in range(actual_width):
+            x_pos = (x + 1) * self.grid_size + self.grid_size // 2
+            rect_id = self.trackplan_canvas.create_rectangle(
+                (x + 1) * self.grid_size, 0, (x + 2) * self.grid_size, self.grid_size,
+                fill="lightgray", outline="black", tags="grid_numbers"
+            )
+            text_id = self.trackplan_canvas.create_text(
+                x_pos, self.grid_size // 2, text=str(x),
+                font=("Arial", 8, "bold"), tags="grid_numbers"
+            )
+        
+        # Números das linhas
+        for y in range(actual_height):
+            y_pos = (y + 1) * self.grid_size + self.grid_size // 2
+            rect_id = self.trackplan_canvas.create_rectangle(
+                0, (y + 1) * self.grid_size, self.grid_size, (y + 2) * self.grid_size,
+                fill="lightgray", outline="black", tags="grid_numbers"
+            )
+            text_id = self.trackplan_canvas.create_text(
+                self.grid_size // 2, y_pos, text=str(y),
+                font=("Arial", 8, "bold"), tags="grid_numbers"
+            )
+        
+        # Canto superior esquerdo
+        corner_id = self.trackplan_canvas.create_rectangle(
+            0, 0, self.grid_size, self.grid_size,
+            fill="darkgray", outline="black", tags="grid_numbers"
+        )
+        
+        grid_status = "LIGADA" if getattr(self, 'grid_visible', True) else "DESLIGADA"
+
+
+    def apply_grid_delayed(self):
         """Aplica grade com delay para garantir que o canvas esteja pronto"""
         try:
             self.apply_grid()
@@ -1103,7 +1240,7 @@ class TrackplanAPI:
             print(f"Erro ao aplicar grade com delay: {e}")
             # Tentar novamente após mais tempo
             print("Tentando aplicar grade novamente em 500ms...")
-            root.after(500, self.apply_grid)
+            self.root.after(500, self.apply_grid)
         
 
     def initialize_trackplan_system(self):
@@ -1315,19 +1452,19 @@ class TrackplanAPI:
             print(f"Erro ao carregar imagens: {e}")
 
 
-    def on_canvas_click_with_focus(event, trackplan_canvas):
+    def on_canvas_click_with_focus(self, event):
         """Evento de clique no canvas com foco automático"""
-        trackplan_canvas.focus_set()
-        return on_canvas_click(event, trackplan_canvas)
+        self.trackplan_canvas.focus_set()
+        return self.on_canvas_click(event)
 
-    def on_canvas_click(event, trackplan_canvas, grid_size):
+    def on_canvas_click(self, event):
         """Evento de clique no canvas"""
-        x = trackplan_canvas.canvasx(event.x)
-        y = trackplan_canvas.canvasy(event.y)
+        x = self.trackplan_canvas.canvasx(event.x)
+        y = self.trackplan_canvas.canvasy(event.y)
         
         # Converter para coordenadas da grade (ajustar para espaço reservado das coordenadas)
-        grid_x = int((x - grid_size) // grid_size)
-        grid_y = int((y - grid_size) // grid_size)
+        grid_x = int((x - self.grid_size) // self.grid_size)
+        grid_y = int((y - self.grid_size) // self.grid_size)
         
         # Verificar se está dentro da grade válida (0 até width, 0 até height)
         try:
@@ -1344,9 +1481,294 @@ class TrackplanAPI:
         self.refresh_fma_test_window()
 
 
+    def create_safe_photo_image(self, pil_image, name_prefix="image"):
+        """Cria PhotoImage de forma segura com correção para Python 3.13 e registry"""
+        try:
+            from PIL import ImageTk
+            
+            # Criar PhotoImage
+            photo_image = ImageTk.PhotoImage(pil_image)
+            
+            # Correção preventiva para o bug do Python 3.13
+            unique_name = f"{name_prefix}_{id(photo_image)}"
+            if not hasattr(photo_image, 'name'):
+                photo_image.name = unique_name
+            
+            # Manter referência forte no registry para prevenir garbage collection
+            self.image_registry[unique_name] = photo_image
+            
+            return photo_image
+        except Exception as e:
+            print(f"Erro ao criar PhotoImage seguro: {e}")
+            return None
+    
+    def create_fma_image_with_integrated_text(self, angle, text):
+        try:
+            import math
+            from PIL import Image, ImageDraw, ImageFont
+
+            img = Image.new('RGBA', (30, 30), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+
+            # --- Linha principal ---
+            if angle in (0, 180):
+                for y in range(13, 17):
+                    draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+
+            elif angle in (90, 270):
+                for x in range(13, 17):
+                    draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+
+            elif angle in (45, 225):
+                draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+
+            elif angle in (135, 315):
+                draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
+
+            # --- Configuração das caixas ---
+            box_config = {
+                0:   {'type': 'rect', 'x1': 2,  'y1': 18, 'x2': 29, 'y2': 28, 'text_rot': 0},
+                90:  {'type': 'rect', 'x1': 18, 'y1': 2,  'x2': 28, 'y2': 29, 'text_rot': 90},
+                180: {'type': 'rect', 'x1': 2,  'y1': 3,  'x2': 29, 'y2': 13, 'text_rot': 0},
+                270: {'type': 'rect', 'x1': 3,  'y1': 2,  'x2': 13, 'y2': 29, 'text_rot': -90},
+
+                45:  {'type': 'poly', 'cx': 16, 'cy': 14, 'w': 13, 'h': 6, 'text_rot': 45},
+                135: {'type': 'poly', 'cx': 20, 'cy': 20, 'w': 13, 'h': 6, 'text_rot': 135},
+                225: {'type': 'poly', 'cx': 14, 'cy': 16, 'w': 13, 'h': 6, 'text_rot': 45},
+                315: {'type': 'poly', 'cx': 10, 'cy': 10, 'w': 13, 'h': 6, 'text_rot': 135},
+            }
+
+            cfg = box_config.get(angle, box_config[0])
+        
+            def diagonal_box(cx, cy, angle_deg, length=10, thickness=4):
+                angle = math.radians(angle_deg)
+
+                # vetor da linha
+                dx = math.cos(angle)
+                dy = math.sin(angle)
+
+                # vetor perpendicular
+                px = -dy
+                py = dx
+
+                # metade
+                hl = length / 2
+                ht = thickness / 2
+
+                return [
+                    (cx - dx*hl - px*ht, cy - dy*hl - py*ht),
+                    (cx + dx*hl - px*ht, cy + dy*hl - py*ht),
+                    (cx + dx*hl + px*ht, cy + dy*hl + py*ht),
+                    (cx - dx*hl + px*ht, cy - dy*hl + py*ht),
+                ]
+
+
+            # --- Desenhar caixa ---
+            if cfg['type'] == 'rect':
+                draw.rectangle(
+                    [(cfg['x1'], cfg['y1']), (cfg['x2'], cfg['y2'])],
+                    outline=(0, 0, 0), fill=(255, 255, 255)
+                )
+                text_cx = (cfg['x1'] + cfg['x2']) // 2
+                text_cy = (cfg['y1'] + cfg['y2']) // 2
+            else:
+                pts = diagonal_box(cfg['cx'], cfg['cy'], angle, length=12, thickness=4)
+                draw.polygon(pts, outline=(0, 0, 0), fill=(255, 255, 255))
+                text_cx, text_cy = cfg['cx'], cfg['cy']
+
+            # --- Fonte --- 
+            try:
+                font = ImageFont.truetype("arial.ttf", 8)
+            except:
+                font = ImageFont.load_default()
+
+            # --- Texto ---
+            if cfg['text_rot'] == 0:
+                draw.text((text_cx, text_cy), text, fill=(0, 0, 0), font=font, anchor="mm")
+            else:
+                temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+
+                temp_draw.text((25, 25), text, fill=(0, 0, 0), font=font, anchor="mm")
+
+                temp_img = temp_img.rotate(-angle, expand=True)
+                
+                w, h = temp_img.size
+                img.paste(temp_img, (int(text_cx - w/2), int(text_cy - h/2)), temp_img)
+
+            return self.create_safe_photo_image(img, f"fma_{angle}_{text}")
+
+        except Exception as e:
+            print(f"Erro ao criar imagem FMA com texto '{text}' (ângulo {angle}°): {e}")
+            return None
+
+def draw_rotated_rect(self, draw, cx, cy, width, height, angle_deg, outline, fill, line_width=1):
+    print(f"Desenhando retângulo rotacionado: centro=({cx},{cy}), tamanho=({width}x{height}), ângulo={angle_deg}°")
+    """Desenha um retângulo rotacionado dado centro, tamanho e ângulo."""
+    angle_rad = math.radians(angle_deg)
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    hw, hh = width / 2, height / 2
+
+    # 4 cantos relativos ao centro
+    corners = [
+        (-hw, -hh),
+        ( hw, -hh),
+        ( hw,  hh),
+        (-hw,  hh),
+    ]
+
+    # Rotacionar e transladar
+    rotated = [
+        (cx + x * cos_a - y * sin_a,
+        cy + x * sin_a + y * cos_a)
+        for x, y in corners
+    ]
+
+    draw.polygon(rotated, outline=outline, fill=fill)
+
+def create_fma_blue_image_with_integrated_text(self, angle, text):
+    """
+    Cria uma imagem FMA AZUL personalizada com texto integrado (para highlighting)
+    
+    Args:
+        angle: Ângulo da FMA (0, 90, 180, 270)  
+        text: Texto a ser integrado na imagem (ex: "2DAT", "1AT", etc)
+        
+    Returns:
+        ImageTk.PhotoImage azul pronto para uso no canvas ou None se erro
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageTk
+        
+        # Criar imagem 30x30 com fundo transparente
+        img = Image.new('RGBA', (30, 30), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        # Definir posições dos quadrados de texto por ângulo - AJUSTADO 1 pixel para cima
+        text_areas = {
+            0:   {'x1': 2,  'y1': 18, 'x2': 29, 'y2': 28, 'rotation': 0},    # Abaixo da horizontal
+            45:  {'x1': 2,  'y1': 18, 'x2': 13, 'y2': 28, 'rotation': 45},   # Canto inferior-esquerdo
+            90:  {'x1': 18, 'y1': 2,  'x2': 28, 'y2': 29, 'rotation': 90},   # À direita da vertical
+            135: {'x1': 17, 'y1': 18, 'x2': 28, 'y2': 28, 'rotation': 135},  # Canto inferior-direito
+            180: {'x1': 2,  'y1': 3,  'x2': 29, 'y2': 13, 'rotation': 180},  # Acima da horizontal
+            225: {'x1': 17, 'y1': 2,  'x2': 28, 'y2': 13, 'rotation': 225},  # Canto superior-direito
+            270: {'x1': 3,  'y1': 2,  'x2': 13, 'y2': 29, 'rotation': 270},  # À esquerda da vertical
+            315: {'x1': 2,  'y1': 2,  'x2': 13, 'y2': 13, 'rotation': 315},  # Canto superior-esquerdo
+        }
+        
+        if angle not in text_areas:
+            angle = 0  # Fallback para ângulo 0
+        
+        area = text_areas[angle]
+        
+        # CORES AZUIS para highlighting
+        blue_line_color = (48, 48, 227, 255)      # Azul para linhas
+        blue_outline_color = (48, 48, 227, 255)   # Azul para contorno
+        blue_fill_color = (255, 255, 255, 255)    # Fundo BRANCO para a caixa de texto (igual às FMAs normais)
+        blue_text_color = (0, 0, 0, 255)          # Texto PRETO para legibilidade no fundo branco
+        
+        # Desenhar linha principal baseada no ângulo - AJUSTADO 1 pixel para cima
+        if angle == 0:
+            # Linha horizontal: x=1,y=13 até x=29,y=17
+            for y in range(13, 17):
+                draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+        elif angle == 45:
+            # Linha diagonal com espessura equivalente
+            draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+        elif angle == 90:
+            # Linha vertical: x=13,y=0 até x=17,y=29
+            for x in range(13, 17):
+                draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+        elif angle == 135:
+            # Linha diagonal invertida com espessura equivalente
+            draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
+        elif angle == 180:
+            # Linha horizontal invertida: x=1,y=13 até x=29,y=17
+            for y in range(13, 17):
+                draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+        elif angle == 225:
+            # Linha diagonal com espessura equivalente
+            draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+        elif angle == 270:
+            # Linha vertical invertida: x=13,y=1 até x=17,y=29
+            for x in range(13, 17):
+                draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+        elif angle == 315:
+            # Linha diagonal com espessura equivalente
+            draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
+
+        # Desenhar quadrado de texto (EM AZUL)
+        # Parâmetros da caixa rotacionada por ângulo
+        rotated_boxes = {
+            45:  {'cx': 20, 'cy': 10, 'w': 14, 'h': 7, 'angle': 45},
+            135: {'cx': 20, 'cy': 20, 'w': 14, 'h': 7, 'angle': 135},
+            225: {'cx': 10, 'cy': 20, 'w': 14, 'h': 7, 'angle': 45},
+            315: {'cx': 10, 'cy': 10, 'w': 14, 'h': 7, 'angle': 135},
+        }
+
+        if angle in rotated_boxes:
+            b = rotated_boxes[angle]
+            self.draw_rotated_rect(
+                draw,
+                cx=b['cx'], cy=b['cy'],
+                width=b['w'], height=b['h'],
+                angle_deg=b['angle'],
+                outline=(0, 0, 0, 255),
+                fill=(255, 255, 255, 255)
+            )
+        else:
+            # Ângulos normais continuam usando draw.rectangle
+            draw.rectangle([
+                (area['x1'], area['y1']),
+                (area['x2'], area['y2'])
+            ], outline=(0, 0, 0, 255), width=1, fill=(255, 255, 255, 255))
+
+        # Adicionar texto no quadrado (EM AZUL ESCURO)
+        try:
+            font = ImageFont.truetype("arial.ttf", 4, bold=True)  # Fonte menor para FMAs
+        except:
+            font = ImageFont.load_default()
+        
+        # Calcular centro do quadrado de texto (toda FMA já foi ajustada 1 pixel para cima)
+        text_center_x = (area['x1'] + area['x2']) // 2
+        text_center_y = (area['y1'] + area['y2']) // 2  # Centro normal, pois toda FMA subiu
+        
+        # Para ângulos 90° e 270°, criar texto rotacionado
+        if angle == 90:
+            # Criar imagem temporária para rotacionar o texto
+            temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
+            temp_draw = ImageDraw.Draw(temp_img)
+            temp_draw.text((25, 25), text, fill=blue_text_color, font=font, anchor="mm")
+            temp_img = temp_img.rotate(-90, expand=False)  # Rotacionar 90° horário
+            # Colar texto rotacionado na posição correta
+            img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
+        elif angle == 270:
+            # Criar imagem temporária para rotacionar o texto
+            temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
+            temp_draw = ImageDraw.Draw(temp_img)
+            temp_draw.text((25, 25), text, fill=blue_text_color, font=font, anchor="mm")
+            temp_img = temp_img.rotate(90, expand=False)  # Rotacionar 90° anti-horário
+            # Colar texto rotacionado na posição correta
+            img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
+        else:
+            # Texto normal (0° e 180°)
+            draw.text((text_center_x, text_center_y), text, fill=blue_text_color, font=font, anchor="mm")
+        
+        # Converter para ImageTk.PhotoImage com correção de bug Python 3.13
+        return self.create_safe_photo_image(img, f"fma_blue_{angle}_{text}")
+        
+    except Exception as e:
+        print(f"Erro ao criar imagem FMA AZUL com texto '{text}' (ângulo {angle}°): {e}")
+        return None
+
+
+
 __all__ = [
     "PIL_AVAILABLE",
     "TrackplanAPI",
+    "TrackplanDesignerView",
     "TrackplanAssetBundle",
     "TrackplanElementData",
     "TrackplanLoadedState",

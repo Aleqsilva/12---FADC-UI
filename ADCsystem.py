@@ -1518,14 +1518,15 @@ class MainView:
                 # Get metadata about the trackplan
                 metadata = get_trackplan_metadata()
 
-
-                when_done = open_fds_recovery(filename)
-
                 #self._controller.simular()
                 
+                xml_data = result['trackplan_data']
+
                 top1 = tk.Toplevel(self._root, height=800, width=1400, bg="#f0f0f0")
                 top1.title("Simulador")
-                canvas_link = create_canvas_toplevel(top1)
+                designer = create_canvas_toplevel(top1)
+                designer.create_trackplan_canvas()
+                designer._apply_trackplan_dimensions(result['xml_data'])
 
                 self._status("Simulacao concluida com sucesso.")
         except Exception as exc:

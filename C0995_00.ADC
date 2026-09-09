@@ -31,7 +31,7 @@ MY_IP_NW1_B4		8:179
 // MY_IP_NW2_B2		8:
 // MY_IP_NW2_B3		8:
 // MY_IP_NW2_B4		8:
-
+    
 //----------------------------------------  
 // Definição da máscara de subrede própria
 //----------------------------------------
@@ -162,10 +162,10 @@ INT_ID_DEST			4:1			//socket 0..15 (depending on configuration of CFG_INT_ID_DES
 [CONFIG]
 CFG_PROJECT_COM		8:13
 RESERVED			3:0
-VERIFY_VERSION		1:0				//0 is default - do not check entry “VERIFY“ and “VERSION“
+VERSION_VERIFY		1:0				//0 is default - do not check entry “VERIFY“ and “VERSION“
 PROJECT_NUMBER		20:1			//0 is default 
 
 // PROTECTION
 [PROTECTION]
-COMPONENT			8:108				//identification of component, COM-Fse R2
+COMPONENT			8:108				//identification of component, COM-Fse R2   
 VERSION				48:0x202509091120	//time of data generation	(YYYYMMDDhhmm)

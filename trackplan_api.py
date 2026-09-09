@@ -15,6 +15,8 @@ from __future__ import annotations
 import os
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
+import tkinter as tk
+from tkinter import ttk
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple, Union
@@ -250,17 +252,16 @@ class TrackplanAPI:
     def parse_trackplan_xml(source: Union[str, bytes, ET.ElementTree, Any], filename: Optional[str] = None) -> TrackplanXMLData:
         if isinstance(source, (ET.ElementTree, ET.Element)):
             root = source.getroot() if isinstance(source, ET.ElementTree) else source
-            print(f"Encontrou element1 {root}, root_tag: {root.tag}")
+            return TrackplanXMLData(root, filename or "from_element")   # <-- adicionar
         if isinstance(source, bytes):
             root = ET.fromstring(source)
             return TrackplanXMLData(root, filename or "from_bytes")
-        print("Encontrou element2")
         if isinstance(source, str):
             tree = ET.parse(source)
             return TrackplanXMLData(tree.getroot(), filename or source)
-        print("Encontrou element3")
         tree = ET.parse(source)
         return TrackplanXMLData(tree.getroot(), filename or getattr(source, "name", "from_file"))
+
     @staticmethod
     def populate_loaded_trackplan(xml_data: TrackplanXMLData) -> TrackplanLoadedState:
         elements: list[dict[str, Any]] = []
@@ -1020,6 +1021,327 @@ class TrackplanAPI:
         rough_string = ET.tostring(element, encoding="unicode")
         reparsed = xml.dom.minidom.parseString(rough_string)
         return reparsed.toprettyxml(indent="\t", encoding=None)
+
+    # ========== CANVAS =========
+
+    def create_trackplan_canvas(root):
+        """Cria a aba do designer de Trackplan minimalista com foco na grade"""
+        frame = ttk.Frame(root)
+        
+        # === TOOLBAR COMPACTA NO TOPO ===
+        toolbar = ttk.Frame(frame, padding="3")
+        toolbar.pack(fill=tk.X)
+        
+        # NOME DO FDS NO TOPO DO CANVAS
+        fds_name_frame = ttk.Frame(frame, style="Section.TLabelframe")
+        fds_name_frame.pack(fill=tk.X, padx=5, pady=(2, 0))
+        
+        # Configurar o grid do frame para expansão
+        fds_name_frame.grid_columnconfigure(1, weight=1)
+
+        # Variável para o nome do FDS
+        trackplan_fds_name_var = tk.StringVar()
+
+        # Label que mostra o nome do FDS
+        fds_name_label = ttk.Label(fds_name_frame, 
+                                    textvariable=trackplan_fds_name_var,
+                                    font=("Segoe UI", 11, "bold"), 
+                                    foreground="#1e3a5f",
+                                    background="#f0f0f0",
+                                    anchor="e")
+        fds_name_label.grid(row=0, column=1, padx=5, pady=5, sticky="")
+
+        # Atualizar nome inicial
+        #self.update_trackplan_fds_name()  necessário reescrever função
+
+        # === ÁREA DA GRADE (TELA CHEIA) ===
+        canvas_frame = ttk.Frame(frame)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Canvas principal ocupando toda a área restante
+        trackplan_canvas = tk.Canvas(canvas_frame, bg="white", scrollregion=(0, 0, 2400, 800))
+        
+        # Scrollbars
+        h_scrollbar = ttk.Scrollbar(canvas_frame, orient="horizontal", command=trackplan_canvas.xview)
+        v_scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=trackplan_canvas.yview)
+        
+        trackplan_canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
+        
+        # Layout em grade
+        trackplan_canvas.grid(row=0, column=0, sticky="nsew")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
+        
+        # === CONFIGURAR EVENTOS ===
+        trackplan_canvas.bind("<Button-1>", on_canvas_click_with_focus)
+        
+        # === INICIALIZAR SISTEMA ===
+        initialize_trackplan_system()
+        
+        # Variáveis adicionais para grade (ANTES de apply_grid)
+        self.width_var = tk.StringVar(value="30")
+        self.height_var = tk.StringVar(value="10")
+        
+        # ADICIONAR ESTAS LINHAS:
+        self.form_fields["width_var"] = self.width_var
+        self.form_fields["height_var"] = self.height_var
+
+        # Forçar atualização da interface antes de aplicar a grade
+        root.update_idletasks()
+        
+        # Aplicar grade e atualizar preview com delay
+        root.after(root, 100, self.apply_grid_delayed)
+
+    def apply_grid_delayed(self, root):
+        """Aplica grade com delay para garantir que o canvas esteja pronto"""
+        try:
+            self.apply_grid()
+        except Exception as e:
+            print(f"Erro ao aplicar grade com delay: {e}")
+            # Tentar novamente após mais tempo
+            print("Tentando aplicar grade novamente em 500ms...")
+            root.after(500, self.apply_grid)
+        
+
+    def initialize_trackplan_system(self):
+        """Inicializa o sistema do trackplan"""
+        try:
+            # Variáveis de controle do sistema
+            self.trackplan_elements = []  # Lista para armazenar elementos
+            
+            # Variáveis da grade
+            self.grid_width = 30
+            self.grid_height = 10
+            self.cell_size = 20
+            self.grid_size = 30  # Tamanho das células na visualização
+            self.grid_visible = True 
+            
+            # Mapeamento de elementos por posição para busca rápida
+            self.element_position_map = {}
+            
+            #Animação seleção cubicle
+            self._overlay_anim = {}  # tag -> {'base': (x1,y1,x2,y2), 'step': 0, 'job': None}
+
+            # Configuração de ângulos e mirrors automáticos de rail para sensores e FMAs
+            self.auto_rail_config = {
+                # Configuração para sensores: ângulo_sensor -> (ângulo_rail, mirror_rail)
+                'sensor': {
+                    0: (0, 0),       # Sensor 0° → Rail 0° mirror 0
+                    45: (270, 0),     # Sensor 45° → Rail 270° mirror 0
+                    90: (180, 0),     # Sensor 90° → Rail 180° mirror 0
+                    135: (270, 1),   # Sensor 135° → Rail 270° mirror 1
+                    180: (0, 0),   # Sensor 180° → Rail 0° mirror 0
+                    225: (270, 0),   # Sensor 225° → Rail 270° mirror 0
+                    270: (180, 0),   # Sensor 270° → Rail 180° mirror 0
+                    315: (270, 1)    # Sensor 315° → Rail 270° mirror 1
+                },
+                # Configuração para FMAs: ângulo_fma -> (ângulo_rail, mirror_rail)
+                'fma': {
+                    0: (0, 0),       # FMA 0° → Rail 0° mirror 0
+                    90: (180, 0),     # FMA 90° → Rail 180° mirror 0
+                    180: (0, 0),   # FMA 180° → Rail 0° mirror 0
+                    270: (180, 0),   # FMA 270° → Rail 180° mirror 0
+                }
+            }
+            
+            # Carregar imagens dos elementos
+            self.load_element_images()            
+        except Exception as e:
+            print(f"Erro ao inicializar sistema trackplan: {e}")
+
+
+    def load_element_images(self):
+        """Carrega imagens dos elementos se disponíveis"""
+        self.element_images = {}
+        self.blue_element_images = {}  # Imagens azuis para destacamento
+        try:
+            # Diretório de imagens (criar pasta 'images' no mesmo diretório do script)
+            images_dir = os.path.join(os.path.dirname(__file__), "images")
+            blue_images_dir = os.path.join(images_dir, "blue")  # Pasta para imagens azuis
+            
+            if os.path.exists(images_dir):
+                # Usar o tamanho completo do grid para pixel art fidedigna
+                image_size = self.grid_size  # 30x30 pixels completos
+                
+                # Lista completa de imagens a carregar
+                image_files = {}
+                
+                # RAILS - Combinações corretas de ângulo e mirror
+                rail_angles = [0, 45, 90, 180, 225, 270, 315]
+                for angle in rail_angles:
+                        for mirror in [0, 1]:
+                            key = f"rail_{angle}_{mirror}"
+                            filename = f"rail_{angle}_{mirror}.png"
+                            image_files[key] = filename
+                # LINKS
+                link_angles = [0, 90, 180, 270]
+                for angle in link_angles:
+                    key = f"link_{angle}"
+                    filename = f"link_{angle}.png"
+                    image_files[key] = filename
+
+                # CROSSING Ângulos 0/90/270 
+                for angle in [0, 90, 270]:
+                    key = f"crossing_{angle}"
+                    filename = f"crossing_{angle}.png"
+                    image_files[key] = filename
+
+                # SWITCHES - Todas as combinações de ângulo e mirror
+                switch_angles = [0, 45, 90, 180, 225]
+                for angle in switch_angles:
+                    for mirror in [0, 1]:
+                        key = f"switch_{angle}_{mirror}"
+                        filename = f"switch_{angle}_{mirror}.png"
+                        image_files[key] = filename
+                
+                # SENSORES - Ângulos padrão (sem direção para imagens normais)
+                sensor_angles = [0, 45, 90, 135, 180, 225, 270, 315]
+                for angle in sensor_angles:
+                    key = f"sensor_{angle}"
+                    filename = f"sensor_{angle}.png"
+                    image_files[key] = filename
+                
+                # Carregar todas as imagens NORMAIS
+                loaded_count = 0
+                for key, filename in image_files.items():
+                    image_path = os.path.join(images_dir, filename)
+                    if os.path.exists(image_path):
+                        try:
+                            # Carregar e redimensionar imagem
+                            img = Image.open(image_path)
+                            img = img.resize((image_size, image_size), Image.Resampling.LANCZOS)
+                            # Criar PhotoImage com correção de bug Python 3.13
+                            self.element_images[key] = self.create_safe_photo_image(img, f"element_{key}")
+                            if self.element_images[key]:  # Só contar se criou com sucesso
+                                loaded_count += 1
+                        except Exception as e:
+                            print(f"Erro ao carregar imagem {filename}: {e}")
+                
+                # Carregar todas as imagens AZUIS (da pasta images/blue/)
+                blue_loaded_count = 0
+                if os.path.exists(blue_images_dir):
+                    # Para rails, switches e FMAs - usar mesma estrutura das imagens normais
+                    for key, filename in image_files.items():
+                        # Buscar imagem azul correspondente
+                        blue_image_path = os.path.join(blue_images_dir, filename)
+                        if os.path.exists(blue_image_path):
+                            try:
+                                # Carregar e redimensionar imagem azul
+                                img = Image.open(blue_image_path)
+                                img = img.resize((image_size, image_size), Image.Resampling.LANCZOS)
+                                # Criar PhotoImage com correção de bug Python 3.13
+                                self.blue_element_images[key] = self.create_safe_photo_image(img, f"blue_element_{key}")
+                                if self.blue_element_images[key]:  # Só contar se criou com sucesso
+                                    blue_loaded_count += 1
+                            except Exception as e:
+                                print(f"Erro ao carregar imagem azul {filename}: {e}")
+                    
+                # Para SENSORES AZUIS - usar sistema left/right
+                sensor_blue_expected = 0
+                for angle in sensor_angles:
+                    for direction in ['left', 'right']:
+                        blue_key = f"sensor_{angle}_{direction}"
+                        blue_filename = f"sensor_{angle}_{direction}.png"
+                        blue_image_path = os.path.join(blue_images_dir, blue_filename)
+                        sensor_blue_expected += 1
+                        if os.path.exists(blue_image_path):
+                            try:
+                                # Carregar e redimensionar imagem azul do sensor
+                                img = Image.open(blue_image_path)
+                                img = img.resize((image_size, image_size), Image.Resampling.LANCZOS)
+                                # Criar PhotoImage com correção de bug Python 3.13
+                                self.blue_element_images[blue_key] = self.create_safe_photo_image(img, f"blue_sensor_{blue_key}")
+                                if self.blue_element_images[blue_key]:  # Só contar se criou com sucesso
+                                    blue_loaded_count += 1
+                            except Exception as e:
+                                print(f"Erro ao carregar imagem azul de sensor {blue_filename}: {e}")
+                        else:
+                            print("Pasta de imagens azuis não encontrada. Criando...")
+                            os.makedirs(blue_images_dir, exist_ok=True)
+                    sensor_blue_expected = len(sensor_angles) * 2  # left/right para cada ângulo
+                
+                # GERAR IMAGENS FMA DINAMICAMENTE PARA PREVIEW
+                fma_preview_count = 0
+                fma_angles = [0, 90, 180, 270] if self.fds_model == "FDS101" else [0, 45, 90, 135, 180, 225, 270, 315]
+                for angle in fma_angles:
+                    preview_key = f"fma_{angle}_PREV"
+                    try:
+                        dynamic_image = self.create_fma_image_with_integrated_text(angle, "FMA")
+                        if dynamic_image:
+                            self.element_images[preview_key] = dynamic_image
+                            fma_preview_count += 1
+                        else:
+                            print(f"Falha ao criar: {preview_key}")
+                    except Exception as e:
+                        print(f"Erro ao criar {preview_key}: {e}")
+                
+                # Listar imagens faltantes para facilitar a criação
+                missing_images = []
+                missing_blue_images = []
+                
+                # Verificar imagens normais faltantes
+                for key, filename in image_files.items():
+                    image_path = os.path.join(images_dir, filename)
+                    if not os.path.exists(image_path):
+                        missing_images.append(filename)
+                
+                # Verificar imagens azuis faltantes (rails, switches, FMAs)
+                for key, filename in image_files.items():
+                    blue_image_path = os.path.join(blue_images_dir, filename)
+                    if not os.path.exists(blue_image_path):
+                        missing_blue_images.append(filename)
+                
+                # Verificar imagens azuis de sensores faltantes (sistema left/right)
+                for angle in sensor_angles:
+                    for direction in ['left', 'right']:
+                        blue_sensor_filename = f"sensor_{angle}_{direction}.png"
+                        blue_sensor_path = os.path.join(blue_images_dir, blue_sensor_filename)
+                        if not os.path.exists(blue_sensor_path):
+                            missing_blue_images.append(blue_sensor_filename)
+                        
+            else:
+                print(f"Diretorio de imagens nao encontrado: {images_dir}")
+                print("Criando estrutura de pastas...")
+                os.makedirs(images_dir, exist_ok=True)
+                os.makedirs(blue_images_dir, exist_ok=True)
+                
+        except ImportError:
+            print("PIL nao encontrado. Execute: pip install Pillow")
+            print("Usando desenho por linhas...")
+        except Exception as e:
+            print(f"Erro ao carregar imagens: {e}")
+
+
+    def on_canvas_click_with_focus(event, trackplan_canvas):
+        """Evento de clique no canvas com foco automático"""
+        trackplan_canvas.focus_set()
+        return on_canvas_click(event, trackplan_canvas)
+
+    def on_canvas_click(event, trackplan_canvas, grid_size):
+        """Evento de clique no canvas"""
+        x = trackplan_canvas.canvasx(event.x)
+        y = trackplan_canvas.canvasy(event.y)
+        
+        # Converter para coordenadas da grade (ajustar para espaço reservado das coordenadas)
+        grid_x = int((x - grid_size) // grid_size)
+        grid_y = int((y - grid_size) // grid_size)
+        
+        # Verificar se está dentro da grade válida (0 até width, 0 até height)
+        try:
+            width = int(self.width_var.get())
+            height = int(self.height_var.get())
+        except ValueError:
+            width, height = 71, 16
+        
+        if grid_x < 0 or grid_y < 0 or grid_x > width or grid_y > height:
+            return
+        
+        self.handle_selection_click(grid_x, grid_y, event)
+        
+        self.refresh_fma_test_window()
 
 
 __all__ = [

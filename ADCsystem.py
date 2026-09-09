@@ -6,7 +6,8 @@ Diagrama: ADCConfig, Entrada, TipoDado, TipoADC, ADCParser, Validador,
 
 from __future__ import annotations
 from trackplan_api import *
-from _mod_backup import open_fds_recovery
+
+from _mod import open_fds_recovery, get_trackplan_elements, get_element_image, get_trackplan_metadata, create_canvas_toplevel
 
 import tkinter.font as tkfont
 import tkinter as tk
@@ -1496,9 +1497,9 @@ class MainView:
             self._erro(exc)
 
     def _on_simular(self) -> None:
-        if self._controller.config is None:
-            messagebox.showwarning("Aviso", "Nenhuma configuracao para simular.")
-            return
+        #if self._controller.config is None:
+        #    messagebox.showwarning("Aviso", "Nenhuma configuracao para simular.")
+        #    return
         try:
             filename = filedialog.askopenfilename(
                 title="Selecionar arquivo de simulacao",
@@ -1508,13 +1509,25 @@ class MainView:
             if not filename:
                 return
 
-            when_done = open_fds_recovery(filename)
-            print(when_done)
+        # Open the recovery zip
+            result = open_fds_recovery(filename)
+            if result['success']:
+                elements = get_trackplan_elements()
+                # Get an image for a rail element at 0° with mirror 0
+                rail_image = get_element_image('rail', 0, 0)
+                # Get metadata about the trackplan
+                metadata = get_trackplan_metadata()
 
 
-            #self._controller.simular()
-            
-            self._status("Simulacao concluida com sucesso.")
+                when_done = open_fds_recovery(filename)
+
+                #self._controller.simular()
+                
+                top1 = tk.Toplevel(self._root, height=800, width=1400, bg="#f0f0f0")
+                top1.title("Simulador")
+                canvas_link = create_canvas_toplevel(top1)
+
+                self._status("Simulacao concluida com sucesso.")
         except Exception as exc:
             self._erro(exc)
 

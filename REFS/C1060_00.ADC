@@ -1,0 +1,279 @@
+//Local: AREAIS 10 (IAA10) - FADC 1
+//Programador: Pedro S. Melo Croce
+//Revisor: 
+//Nº de Revisão: 0.00
+//Nota:
+
+[IDENTIFICATION]
+
+ID			12:1060			//ID of board
+CHANNEL		4:0					
+
+//---------------------------------------------------------------------------------
+// Configuração da Proteção de Tipo (TYPE PROTECT) para as palavras de configuração
+//---------------------------------------------------------------------------------
+[CONFIG]
+CFG_TYPE_PRTCT		7:127
+TYPE_PRTCT			1:1			
+TYPE_PRTCT_CODE		32:0   //0 no type protection  
+
+//--------------------------------
+// Tipo de sensor de roda
+// Pode ser configurada 1x por AEB
+//--------------------------------
+[CONFIG]
+CFG_RSR_TYPE	7:40
+TYPE_PRTCT		1:0  	//0 no type protection
+RSR_TYPE		2:1		//0 (no RSR-evaluation), 1 (RSR180 - default), 2 (not allowed), 3 (RSR123)
+RESERVED		6:0
+
+//---------------------------------------------------------------------------------------
+// Intervalo de transmissão (barramento CAN), SV-count, system-count, PT-count (optional)
+// Pode ser configurada 1x por AEB
+//---------------------------------------------------------------------------------------
+[CONFIG]
+CFG_ZP			7:13
+TYPE_PRTCT		1:0		//0 no type protection
+INTERVAL		2:3		//0 (10 ms), 1 (40 ms), 2 (80 ms), 3 (160 ms - default) 
+RESERVED		2:0		
+SUPERVIS_COUNT	3:1		//0..7 - number of resets permitted by a supervisor section (2 - default)///////////////realizar verificação
+RESERVED		1:0     
+SYSTEM_COUNT	3:3		//0..7 - number of allowed system occupancies per minute in inactive status (2- default)/////////////realizar verificação
+RESERVED		1:0     
+PARTIAL_COUNT	3:1		//0..7 - number of partial traversings to cause a permanent occupied indication (1 - default)
+RESERVED		1:0
+
+//--------------------------------
+// Pre-definição dos timeouts
+// Pode ser configurada 8x por AEB
+//--------------------------------
+[CONFIG]
+CFG_TIMEOUT			7:32     //32..39 (32 defines time-out0, 33 defines time-out1, 34 is time-out2, ...)
+TYPE_PRTCT			1:0      //0 (no type protection)
+TIMEOUT_VALUE		8:255		//time-out in 10 ms steps (from 0 to 2550 ms):0..255, e.g. 80 (800 ms)
+
+//-----------------------------------------
+// counting head control (CHC)
+// can be configured 2x per counting head
+// delete this block, if you do not use CHC
+//-----------------------------------------
+[CONFIG]
+CFG_CONTROL		7:7     
+TYPE_PRTCT		1:0		   //0 no type protection    
+SECTION			1:0	       //0 (track section 1), 1 (track section2) 
+SLCT_TIMEOUT	3:0        //0..7, depends on the configured time-out (see CFG_TIMEOUT)
+ID				12:1060	   //ID of AEB of the adjacent section
+
+//-----------------------------------------
+// counting head control (CHC)
+// can be configured 2x per counting head
+// delete this block, if you do not use CHC
+//-----------------------------------------
+[CONFIG]
+CFG_CONTROL		7:7     
+TYPE_PRTCT		1:0		   //0 no type protection    
+SECTION			1:1	       //0 (track section 1), 1 (track section2) 
+SLCT_TIMEOUT	3:0        //0..7, depends on the configured time-out (see CFG_TIMEOUT)
+ID				12:1060	   //ID of AEB of the adjacent section
+
+//------------------------------------
+// Extensão dinâmica da ocupação (DBV) 
+// Pode ser configurada 1x por AEB
+//------------------------------------
+[CONFIG]
+CFG_DBV			7:44
+TYPE_PRTCT		1:0		//0 no type protection
+DBV				2:1      //0 (not used - default), 1 (used)
+RESERVED		6:0
+
+//-----------------------------------------
+// Atribuição dos sensores de roda da FMA 1
+// Pode ser configurada 16x por AEB
+//-----------------------------------------
+//Seção #11AT#
+[CONFIG]
+CFG_ZP_FMA1		7:1
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:0		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0		//0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1070		//AEB-ID of the counting head to be added to this track section
+
+[CONFIG]
+CFG_ZP_FMA1		7:1
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:0		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0		//0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1060	//AEB-ID of the counting head to be added to this track section
+
+[CONFIG]
+CFG_ZP_FMA1		7:1
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:1		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0		//0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1050		//AEB-ID of the counting head to be added to this track section
+
+[CONFIG]
+CFG_ZP_FMA1		7:1
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:1		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0		//0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1065		//AEB-ID of the counting head to be added to this track section
+
+//-----------------------------------------
+// Atribuição dos sensores de roda da FMA 2
+// Pode ser configurada 16x por AEB
+//-----------------------------------------
+//Seção #11BT#
+[CONFIG]
+CFG_ZP_FMA2		7:2
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:0		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0      //0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1065		//AEB-ID of the counting head to be added to this track section  
+
+[CONFIG]
+CFG_ZP_FMA2		7:2
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:0		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0      //0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1080		//AEB-ID of the counting head to be added to this track section  
+
+[CONFIG]
+CFG_ZP_FMA2		7:2
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:0		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0      //0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1085		//AEB-ID of the counting head to be added to this track section  
+
+[CONFIG]
+CFG_ZP_FMA2		7:2
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:1		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0      //0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1055		//AEB-ID of the counting head to be added to this track section  
+
+[CONFIG]
+CFG_ZP_FMA2		7:2
+TYPE_PRTCT		1:0		//0 no type protection
+DIR_INV			1:1		//0 (no inversion), 1 (inversion)
+SLCT_TIMEOUT	3:0      //0..7, depends on the configured/projected time-out (see CFG_TIMEOUT) 
+ID				12:1060		//AEB-ID of the counting head to be added to this track section  
+
+
+
+
+//-------------------------------------------------
+// Configuração da extensão e do atraso da ocupação
+// Pode ser configurada 1x por AEB
+//-------------------------------------------------
+[CONFIG]
+CFG_OCC				7:46
+TYPE_PRTCT			1:0		//0  no type protection
+OCC_EXT				8:0		//0..255 (26 is default - 2.6 s)
+OCC_DELAY			8:0      //0..255 (0  is default - 0 s)
+
+//-----------------------------------------------------------------------------------
+// Tempos de ativação de restrição e execução de reset; e tempo entre pre-Reset/RESET
+// Pode ser configurada uma vez por AEB
+//-----------------------------------------------------------------------------------
+[CONFIG]
+CFG_SWITCH			7:50  //palavra utilizada para configurar o tempo entre o pré reset e o reset CDC
+TYPE_PRTCT			1:0		
+SWITCH_GE			8:0		//time before reset restriction is set back in 100 ms (0..25 500 ms) eg. 26 (2 600 ms, default) 
+SWITCH_GSF			8:0 		//time before reset ability is set back in 100 ms (0..25 500 ms) (0 ms default) 
+PRERESET_ACT_TIME	8:30		//pre-reset active time in 10s (0..2 550 s) eg. 180 (1 800 s default) - [30= 5 min]
+
+//----------------------------------------
+// Pre-definição do comportamento do reset
+// Pode ser configurada 1x por AEB
+//----------------------------------------
+[CONFIG]
+CFG_SECTION		7:12
+TYPE_PRTCT		1:0		//0 no type protection
+COMM_FAIL		1:0		//0 (continues operation - default), 1 (wait for reset)
+BEHAV_GE		2:2		//1 is default - no reset restriction  
+CLR_TRACK		2:0		//0 is default - at least 2 different counting heads  
+RESERVED		3:0
+RESET_IN		4:13		//5 is default - pre-Reset + Reset 
+RESET_OUT		4:13		//1 is default - Reset 
+
+//------------------------------------------------------
+// Tempo de operação do reset e tempo de espera do reset
+// Pode ser configurada 1x por AEB
+//------------------------------------------------------
+[CONFIG]
+CFG_RESET		7:48
+TYPE_PRTCT		1:0		//0  no type protection
+RESET_OP_TIME	8:255  	//5..255 (0..4 not allowed, 50 is default = 500 ms) 10ms steps
+RESET_LD_TIME	8:255 		//1..255 (0 not allowed, 1 is default = 100 ms) 100ms steps
+
+
+//--------------------------------
+// Comportamento dos botões da AEB
+// Pode ser configurada 1x por AEB
+//--------------------------------
+[CONFIG]
+CFG_BEHAV_TGGL		7:15    
+TYPE_PRTCT			1:0      //0 no type protection
+BEHAV_RESET			3:7		//0..7 (4 is default - auxiliary reset)
+RESERVED			1:0
+BEHAV_SIMUL			1:1		//0 or 1 (0 is default - simulation via push buttons enabled)
+RESERVED			3:0
+
+//---------------------------------------------------------------------------------
+// Saída livre/ocupado via IO-EXB
+// Pode ser configurada até 8x (2, 4, 6 ou 8 vezes para 1, 2, 3 or 4 IO-EXB boards)
+//---------------------------------------------------------------------------------
+[CONFIG]
+CFG_SECTION_OUT		7:8
+TYPE_PRTCT			1:0 		//0 no type protection
+CLR_OCC				1:0 		//0 failsafe clear indication (recommended by Frauscher), 1 occupied indication
+RESERVED			7:0
+AUX1_OUT			3:2      //auxiliary output 1 (relay)
+AUX1_NO_NC			1:0      //non-operating status auxiliary output 1: 0 open, 1 closed
+AUX2_OUT			3:3 		//auxiliary output 2 (relay)
+AUX2_NO_NC			1:0      //non-operating status auxiliary output 1: 0 open, 1 closed
+SECTION				1:0 		//0 track-section 1, 1 track-section 2
+SLCT_TIMEOUT		3:0 		//0..7, time-out between the two AEBs in case of data-forwarding 
+ID					12:1060     //ID of AEB, whose data should be output
+
+[CONFIG]
+CFG_SECTION_OUT		7:8
+TYPE_PRTCT			1:0 		//0 no type protection
+CLR_OCC				1:0 		//0 failsafe clear indication (recommended by Frauscher), 1 occupied indication
+RESERVED			7:0
+AUX1_OUT			3:2      //auxiliary output 1 (relay)
+AUX1_NO_NC			1:0      //non-operating status auxiliary output 1: 0 open, 1 closed
+AUX2_OUT			3:3 		//auxiliary output 2 (relay)
+AUX2_NO_NC			1:0      //non-operating status auxiliary output 1: 0 open, 1 closed
+SECTION				1:1 		//0 track-section 1, 1 track-section 2
+SLCT_TIMEOUT		3:0 		//0..7, time-out between the two AEBs in case of data-forwarding 
+ID					12:1060     //ID of AEB, whose data should be output
+
+//-------------------------------- 
+// Entradas de reset via IO-EXB
+// Pode ser configurada 1x por AEB
+//-------------------------------- 
+[CONFIG]
+CFG_AXCNT			7:14
+TYPE_PRTCT			1:0 		//0  no type protection
+BEHAV_INPUT1		3:6 		//1 (default - restricted reset)
+RESERVED			1:0
+BEHAV_INPUT2		3:6      //1 (default - restricted reset)
+RESERVED			1:0
+BEHAV_INPUT3		3:6      //0 (default - direct reset)
+RESERVED			1:0
+BEHAV_IOEXB			3:5      //1 (default - restricted reset) --- toggle switches on IO-EXB //PERGUNTAR ALEXANDRE
+RESERVED			1:0 
+
+[CONFIG]
+CFG_PROJECT_AEB		7:16
+TYPE_PRTCT			1:0      //0 no type protection
+RESERVED			4:0	
+PROJECT_NUMBER		20:1		 
+
+[PROTECTION]
+COMPONENT			8:2					//board-identification (AEB)
+VERSION				48:0x202401110929	//time of data generation YYYYMMDDHHMM
+CRC		32:0x62372321		//ConfigCRC version 1.00
+VERIFY              48:0x202507291532	

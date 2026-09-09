@@ -1,85 +1,83 @@
 //Local: PIAÇAGUERA 5 (IPG-5)
 //Programador: Pedro S. Melo Croce
-//Revisor: 
+//Revisor:
 //Nº de Revisão: 0.00
-
 [IDENTIFICATION]
-
-ID			12:625			//ID of board
-CHANNEL		4:0					
-
-[CONFIG]
-CFG_TYPE_PRTCT		7:127
-TYPE_PRTCT			1:1			
-TYPE_PRTCT_CODE		32:0   //0 no type protection  
+ID                 12:625    //ID of board
+CHANNEL            4:0
 
 [CONFIG]
-CFG_RSR_TYPE	7:40
-TYPE_PRTCT		1:0  	//0 no type protection
-RSR_TYPE		2:1		//0 (no RSR-evaluation), 1 (RSR180 - default), 2 (not allowed), 3 (RSR123)
-RESERVED		6:0
+CFG_TYPE_PRTCT     7:127
+TYPE_PRTCT         1:1
+TYPE_PRTCT_CODE    32:0    //0 no type protection
 
 [CONFIG]
-CFG_ZP			7:13
-TYPE_PRTCT		1:0		//0 no type protection
-INTERVAL		2:3		//0 (10 ms), 1 (40 ms), 2 (80 ms), 3 (160 ms - default) 
-RESERVED		2:0		
-SUPERVIS_COUNT	3:1		//0..7 - number of resets permitted by a supervisor section (2 - default)
-RESERVED		1:0     
-SYSTEM_COUNT	3:1		//0..7 - number of allowed system occupancies per minute in inactive status (2- default)
-RESERVED		1:0     
-PARTIAL_COUNT	3:1		//0..7 - number of partial traversings to cause a permanent occupied indication (1 - default)
-RESERVED		1:0
+CFG_RSR_TYPE       7:40
+TYPE_PRTCT         1:0    //0 no type protection
+RSR_TYPE           2:1    //0 (no RSR-evaluation), 1 (RSR180 - default), 2 (not allowed), 3 (RSR123)
+RESERVED           6:0
 
+[CONFIG]
+CFG_ZP             7:13
+TYPE_PRTCT         1:0    //0 no type protection
+INTERVAL           2:3    //0 (10 ms), 1 (40 ms), 2 (80 ms), 3 (160 ms - default)
+RESERVED           2:0
+SUPERVIS_COUNT     3:1    //0..7 - number of resets permitted by a supervisor section (2 - default)
+RESERVED           1:0
+SYSTEM_COUNT       3:1    //0..7 - number of allowed system occupancies per minute in inactive status (2- default)
+RESERVED           1:0
+PARTIAL_COUNT      3:1    //0..7 - number of partial traversings to cause a permanent occupied indication (1 - default)
+RESERVED           1:0
 //--------------------------------
 // Pre-definição dos timeouts
 // Pode ser configurada 8x por AEB
 //--------------------------------
-[CONFIG]
-CFG_TIMEOUT			7:32     //32..39 (32 defines time-out0, 33 defines time-out1, 34 is time-out2, ...)
-TYPE_PRTCT			1:0      //0 (no type protection)
-TIMEOUT_VALUE		8:255		//time-out in 10 ms steps (from 0 to 2550 ms):0..255, e.g. 80 (800 ms)
 
+[CONFIG]
+CFG_TIMEOUT        7:32    //32..39 (32 defines time-out0, 33 defines time-out1, 34 is time-out2, ...)
+TYPE_PRTCT         1:0    //0 (no type protection)
+TIMEOUT_VALUE      8:255    //time-out in 10 ms steps (from 0 to 2550 ms):0..255, e.g. 80 (800 ms)
 //-----------------------------------------
 //    13BT- IPG5
 //-----------------------------------------
-[CONFIG]
-CFG_CONTROL		7:7     
-TYPE_PRTCT		1:0		   //0 no type protection    
-SECTION			1:1	       //0 (track section 1), 1 (track section2) 
-SLCT_TIMEOUT	3:0        //0..7, depends on the configured time-out (see CFG_TIMEOUT)
-ID				12:634	   //ID of AEB of the adjacent section
 
+[CONFIG]
+CFG_CONTROL        7:7
+TYPE_PRTCT         1:0    //0 no type protection
+SECTION            1:1    //0 (track section 1), 1 (track section2)
+SLCT_TIMEOUT       3:0    //0..7, depends on the configured time-out (see CFG_TIMEOUT)
+ID                 12:634    //ID of AEB of the adjacent section
 //-----------------------------------------
 //    19T - IPG5
 //-----------------------------------------
-[CONFIG]
-CFG_CONTROL		7:7     
-TYPE_PRTCT		1:0		   //0 no type protection    
-SECTION			1:1	       //0 (track section 1), 1 (track section2) 
-SLCT_TIMEOUT	3:0        //0..7, depends on the configured time-out (see CFG_TIMEOUT)
-ID				12:635	   //ID of AEB of the adjacent section
 
 [CONFIG]
-CFG_DBV			7:44
-TYPE_PRTCT		1:0		//0 no type protection
-DBV				2:1      //0 (not used - default), 1 (used)
-RESERVED		6:0
+CFG_CONTROL        7:7
+TYPE_PRTCT         1:0    //0 no type protection
+SECTION            1:1    //0 (track section 1), 1 (track section2)
+SLCT_TIMEOUT       3:0    //0..7, depends on the configured time-out (see CFG_TIMEOUT)
+ID                 12:635    //ID of AEB of the adjacent section
 
 [CONFIG]
-CFG_BEHAV_TGGL		7:15    
-TYPE_PRTCT			1:0      //0 no type protection
-BEHAV_RESET			3:7		//0..7 (4 is default - auxiliary reset)
-RESERVED			1:0
-BEHAV_SIMUL			1:0		//0 or 1 (0 is default - simulation via push buttons enabled)
-RESERVED			3:0
+CFG_DBV            7:44
+TYPE_PRTCT         1:0    //0 no type protection
+DBV                2:1    //0 (not used - default), 1 (used)
+RESERVED           6:0
 
 [CONFIG]
-CFG_PROJECT_AEB		7:16
-TYPE_PRTCT			1:0      //0 no type protection
-RESERVED			4:0	
-PROJECT_NUMBER		20:1		 
+CFG_BEHAV_TGGL     7:15
+TYPE_PRTCT         1:0    //0 no type protection
+BEHAV_RESET        3:7    //0..7 (4 is default - auxiliary reset)
+RESERVED           1:0
+BEHAV_SIMUL        1:0    //0 or 1 (0 is default - simulation via push buttons enabled)
+RESERVED           3:0
+
+[CONFIG]
+CFG_PROJECT_AEB    7:16
+TYPE_PRTCT         1:0    //0 no type protection
+RESERVED           4:0
+PROJECT_NUMBER     20:1
 
 [PROTECTION]
-COMPONENT			8:2					//board-identification (AEB)
-VERSION				48:0x202606030900					//time of data generation YYYYMMDDHHMM
+COMPONENT          8:2    //board-identification (AEB)
+VERSION            48:0x202606030900    //time of data generation YYYYMMDDHHMM

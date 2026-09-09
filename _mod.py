@@ -3,6 +3,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
+from PIL import Image, ImageTk
 
 # Try to import from the main application
 try:
@@ -30,6 +31,8 @@ except ImportError:
 _loaded_data = None  # TrackplanLoadedState
 _element_images = None  # TrackplanAssetBundle
 
+def create_canvas_toplevel(root):
+    return TrackplanService.create_trackplan_canvas(root)
 
 def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
     global _loaded_data, _element_images
@@ -58,7 +61,6 @@ def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
 
             try:
                 trackplan_root = ET.fromstring(trackplan_content)
-                print(type(trackplan_root))
                 xml_data = TrackplanService.parse_trackplan_xml(trackplan_root, 'Trackplan.xml')
                 _loaded_data = TrackplanService.populate_loaded_trackplan(xml_data)
             except Exception as e:

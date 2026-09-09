@@ -1,0 +1,263 @@
+//Local: MOCKUP AEB FULL COVERAGE
+//Programador: Copilot
+//Revisor:
+//Nº de Revisão: 1.00
+[IDENTIFICATION]
+ID                   12:900
+CHANNEL              4:0
+
+[CONFIG]
+CFG_TYPE_PRTCT       7:127
+TYPE_PRTCT           1:1
+TYPE_PRTCT_CODE      32:123456
+
+[CONFIG]
+CFG_ZP_FMA1          7:1
+TYPE_PRTCT           1:1
+DIR_INV              1:0
+SLCT_TIMEOUT         3:4
+ID                   12:901
+
+[CONFIG]
+CFG_ZP_FMA2          7:2
+TYPE_PRTCT           1:0
+DIR_INV              1:1
+SLCT_TIMEOUT         3:5
+ID                   12:902
+
+[CONFIG]
+CFG_SECTION_OUT      7:8
+TYPE_PRTCT           1:1
+CLR_OCC              1:1
+RESERVED             7:0
+AUX1_OUT             3:1
+AUX1_NO_NC           1:0
+AUX2_OUT             3:2
+AUX2_NO_NC           1:1
+SECTION              1:1
+SLCT_TIMEOUT         3:3
+ID                   12:903
+
+[CONFIG]
+CFG_SUPERVIS_FMA1    7:3
+TYPE_PRTCT           1:1
+LOGIC_TYPE           1:0
+RESET_TYPE           2:2
+RESERVED             5:0
+RESET_DELAY          8:50
+SECTION              1:1
+SLCT_TIMEOUT         3:4
+ID                   12:904
+
+[CONFIG]
+CFG_SUPERVIS_FMA2    7:4
+TYPE_PRTCT           1:1
+LOGIC_TYPE           1:1
+RESET_TYPE           2:3
+RESERVED             5:0
+RESET_DELAY          8:60
+SECTION              1:0
+SLCT_TIMEOUT         3:5
+ID                   12:905
+
+[CONFIG]
+CFG_SYNC_FMA1        7:5
+TYPE_PRTCT           1:1
+SECTION              1:1
+SLCT_TIMEOUT         3:2
+ID                   12:906
+
+[CONFIG]
+CFG_SYNC_FMA2        7:6
+TYPE_PRTCT           1:0
+SECTION              1:0
+SLCT_TIMEOUT         3:3
+ID                   12:907
+
+[CONFIG]
+CFG_CONTROL          7:7
+TYPE_PRTCT           1:1
+SECTION              1:1
+SLCT_TIMEOUT         3:2
+ID                   12:908
+
+[CONFIG]
+CFG_ZP-OUT_IO        7:10
+TYPE_PRTCT           1:1
+ZP-OUT1_R            3:1
+ZP-OUT1_NO_NC_R      1:0
+ZP-OUT2_R            3:2
+ZP-OUT2_NO_NC_R      1:1
+ZP-OUT3_R            3:3
+ZP-OUT3_NO_NC_R      1:0
+RESERVED             4:0
+
+[CONFIG]
+CFG_DATA_IO          7:9
+TYPE_PRTCT           1:1
+SAFETY_LEVEL_IN      2:2
+SAFETY_LEVEL_OUT     2:3
+AUTO_POSITION        1:1
+POSITION             3:5
+RESERVED             1:0
+SLCT_TIMEOUT         3:4
+ID                   12:909
+
+[CONFIG]
+CFG_TIMEOUT          7:32
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:20
+
+[CONFIG]
+CFG_TIMEOUT          7:33
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:40
+
+[CONFIG]
+CFG_TIMEOUT          7:34
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:60
+
+[CONFIG]
+CFG_TIMEOUT          7:35
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:80
+
+[CONFIG]
+CFG_TIMEOUT          7:36
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:100
+
+[CONFIG]
+CFG_TIMEOUT          7:37
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:120
+
+[CONFIG]
+CFG_TIMEOUT          7:38
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:140
+
+[CONFIG]
+CFG_TIMEOUT          7:39
+TYPE_PRTCT           1:0
+TIMEOUT_VALUE        8:160
+
+[CONFIG]
+CFG_SECTION          7:12
+TYPE_PRTCT           1:1
+COMM_FAIL            1:1
+BEHAV_GE             2:2
+CLR_TRACK            2:1
+RESERVED             3:0
+RESET_IN             4:4
+RESET_OUT            4:8
+
+[CONFIG]
+CFG_ZP               7:13
+TYPE_PRTCT           1:1
+INTERVAL             2:2
+RESERVED             2:0
+SUPERVIS_COUNT       3:3
+RESERVED             1:0
+SYSTEM_COUNT         3:4
+RESERVED             1:0
+PARTIAL_COUNT        3:5
+RESERVED             1:0
+
+[CONFIG]
+CFG_RESET            7:48
+TYPE_PRTCT           1:1
+RESET_OP_TIME        8:25
+RESET_LD_TIME        8:30
+
+[CONFIG]
+CFG_AXCNT            7:14
+TYPE_PRTCT           1:1
+BEHAV_INPUT1         3:1
+BEHAV_INPUT2         3:2
+BEHAV_INPUT3         3:3
+BEHAV_IOEXB          3:4
+
+[CONFIG]
+CFG_OCC              7:46
+TYPE_PRTCT           1:1
+OCC_EXT              8:15
+OCC_DELAY            8:20
+
+[CONFIG]
+CFG_BEHAV_TGGL       7:15
+TYPE_PRTCT           1:1
+BEHAV_RESET          3:4
+BEHAV_SIMUL          1:1
+
+[CONFIG]
+CFG_RSR_TYPE         7:40
+TYPE_PRTCT           1:1
+RSR_TYPE             2:1
+RESERVED             6:0
+
+[CONFIG]
+CFG_ZP-OUT_AEB       7:11
+TYPE_PRTCT           1:1
+ZP-OUT1_O            3:1
+ZP-OUT1_NO_NC_O      1:0
+ZP-OUT2_O            3:2
+ZP-OUT2_NO_NC_O      1:1
+ZP-OUT3_O            3:3
+ZP-OUT3_NO_NC_O      1:0
+ZP-OUT4_O            3:4
+ZP-OUT4_NO_NC_O      1:1
+
+[CONFIG]
+CFG_ZP-OUT_EXT       7:47
+TYPE_PRTCT           1:1
+SYS_EXT              16:500
+DIR_LENGTH           16:300
+
+[CONFIG]
+CFG_DBV              7:44
+TYPE_PRTCT           1:1
+DBV                  2:1
+RESERVED             6:0
+
+[CONFIG]
+CFG_PROJECT_AEB      7:16
+TYPE_PRTCT           1:1
+RESERVED             4:0
+PROJECT_NUMBER       20:999001
+
+[CONFIG]
+CFG_ESP_ASP          7:41
+TYPE_PRTCT           1:1
+ESP                  8:100
+ASP                  8:120
+ESP_DBV              8:90
+ASP_DBV              8:110
+
+[CONFIG]
+CFG_USP              7:42
+TYPE_PRTCT           1:1
+USP_LOW              8:80
+USP_HIGH             8:140
+
+[CONFIG]
+CFG_MG               7:43
+TYPE_PRTCT           1:1
+MG_SUPP              2:2
+RESERVED             6:0
+
+[CONFIG]
+CFG_MG_VALUE         7:45
+TYPE_PRTCT           1:1
+MAX_DUR_OCC          8:60
+MG_SUPP_FACTOR       8:4
+
+[CONFIG]
+CFG_FILTER           7:49
+TYPE_PRTCT           1:1
+FILTER               8:25
+
+[PROTECTION]
+COMPONENT            8:2
+VERSION              48:0x202607240900

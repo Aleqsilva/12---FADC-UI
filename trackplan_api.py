@@ -12,6 +12,7 @@ Este modulo concentra a logica que pode ser consumida por outros projetos:
 
 from __future__ import annotations
 
+import math
 import os
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
@@ -372,297 +373,6 @@ class TrackplanAPI:
                     continue
             max_base = max(max_base, base)
         return max_base + 1 if max_base > 0 else 7000
-
-    @staticmethod
-    def build_trackplan_xml(
-        elements: Iterable[Mapping[str, Any]],
-        form_fields: Optional[Mapping[str, Any]] = None,
-        cubicles_data: Optional[Iterable[Mapping[str, Any]]] = None,
-        fds_model: str = "FDS101",
-        next_element_id: int = 7000,
-    ) -> str:
-        form_fields = form_fields or {}
-        cubicles_data = list(cubicles_data or [])
-        elements = list(elements or [])
-
-        trackplan_root = ET.Element("Trackplan")
-        trackplan_root.set("name", str(_value_from_field(form_fields.get("StationName"), "")).strip())
-        trackplan_root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
-        trackplan_root.set("xsi:noNamespaceSchemaLocation", "Trackplan.xsd")
-
-        selected_network = str(_value_from_field(form_fields.get("TrackplanNetwork"), "IP Rede1")).strip().lower()
-        use_net2 = "2" in selected_network
-
-        ip_field = "IpAddressNet2" if use_net2 else "IpAddressNet1"
-        mask_field = "MaskNet2" if use_net2 else "MaskNet1"
-        ip_default = "192.168.0.12" if use_net2 else "192.168.1.12"
-        mask_default = "255.255.255.0"
-
-        fds_elem = ET.SubElement(trackplan_root, "Fds")
-        fds_elem.set("name", str(_value_from_field(form_fields.get("FdsName"), "ABRIGO AREAIS")))
-        fds_elem.set("ip", str(_value_from_field(form_fields.get(ip_field), ip_default)))
-        fds_elem.set("netmask", str(_value_from_field(form_fields.get(mask_field), mask_default)))
-        fds_elem.set("version", str(_value_from_field(form_fields.get("ConfigVersion"), "1.0")))
-
-        stations_elem = ET.SubElement(trackplan_root, "Stations")
-        ET.SubElement(stations_elem, "ThisStation")
-
-        track_elem = ET.SubElement(trackplan_root, "Track")
-        track_elem.set("width", str(_value_from_field(form_fields.get("width_var"), "71")))
-        track_elem.set("height", str(_value_from_field(form_fields.get("height_var"), "16")))
-
-        real_rails = [e for e in elements if e.get("type") == "rail" and not e.get("auto_rail") and e.get("rail_type") != "SWITCH"]
-        switches = [e for e in elements if e.get("type") == "switch" or (e.get("type") == "rail" and e.get("rail_type") == "SWITCH")]
-        sensors = [e for e in elements if e.get("type") == "sensor"]
-        fmas = [e for e in elements if e.get("type") == "fma"]
-        links = [e for e in elements if e.get("type") == "link"]
-        crossings = [e for e in elements if e.get("type") == "crossing"]
-
-        real_rail_ids_in_xml = {str(r.get("id")) for r in real_rails}
-        real_rail_ids_in_xml |= {str(s.get("id")) for s in switches}
-        real_rail_ids_in_xml |= {str(l.get("id")) for l in links}
-        real_rail_ids_in_xml |= {str(c.get("id")) for c in crossings}
-
-        element_type_by_id: dict[str, Any] = {}
-        element_crossing_by_id: dict[str, Mapping[str, Any]] = {}
-        for element in elements:
-            eid = str(element.get("id", "")).strip()
-            if not eid:
-                continue
-            element_type_by_id[eid] = element.get("type")
-            if element.get("type") == "crossing":
-                element_crossing_by_id[eid] = element
-
-        created_auto_rails: dict[tuple[Any, Any], int] = {}
-
-        for link in links:
-            link_elem = ET.SubElement(track_elem, "Link")
-            link_elem.set("id", str(link.get("id")))
-            link_elem.set("url", str(link.get("url")))
-            link_elem.set("angle", str(link.get("angle")))
-            link_elem.set("x", str(link.get("x")))
-            link_elem.set("y", str(link.get("y")))
-
-        for crossing in crossings:
-            crossing_elem = ET.SubElement(track_elem, "Crossing")
-            crossing_elem.set("id", str(crossing.get("id")))
-            crossing_elem.set("angle", str(crossing.get("angle")))
-            crossing_elem.set("x", str(crossing.get("x")))
-            crossing_elem.set("y", str(crossing.get("y")))
-
-        for rail in real_rails:
-            rail_xml = ET.SubElement(track_elem, "Rail")
-            rail_xml.set("id", str(rail.get("id", "")))
-            rail_xml.set("angle", str(rail.get("angle", 0)))
-            rail_xml.set("mirror", str(rail.get("mirror", 0)))
-            rail_xml.set("x", str(rail.get("x", 0)))
-            rail_xml.set("y", str(rail.get("y", 0)))
-
-        for switch in switches:
-            rail_xml = ET.SubElement(track_elem, "Rail")
-            rail_xml.set("id", str(switch.get("id", "")))
-            rail_xml.set("type", "SWITCH")
-            rail_xml.set("angle", str(switch.get("angle", 0)))
-            rail_xml.set("mirror", str(switch.get("mirror", 0)))
-            rail_xml.set("x", str(switch.get("x", 0)))
-            rail_xml.set("y", str(switch.get("y", 0)))
-
-        for sensor in sensors:
-            position = (sensor.get("x"), sensor.get("y"))
-            rail_at_position = TrackplanAPI._find_real_rail_at_position(real_rails + switches, position)
-
-            sensor_xml = ET.SubElement(track_elem, "Sensor")
-            sensor_id = str(sensor.get("id", ""))
-            sensor_xml.set("id", sensor_id)
-            sensor_xml.set("angle", str(sensor.get("angle", 0)))
-            sensor_xml.set("x", str(sensor.get("x", 0)))
-            sensor_xml.set("y", str(sensor.get("y", 0)))
-
-            if sensor_id and sensor_id.startswith("2") and len(sensor_id) > 1:
-                ref_id_base = sensor_id[1:]
-                sensor_xml.set("name", f"ZP{ref_id_base}")
-                sensor_xml.set("refId", f"1{ref_id_base}")
-                if sensor.get("fma0"):
-                    sensor_xml.set("fma0", str(sensor.get("fma0")))
-                if sensor.get("fma1"):
-                    sensor_xml.set("fma1", str(sensor.get("fma1")))
-
-            if not rail_at_position and position not in created_auto_rails:
-                rail_angle, rail_mirror = TrackplanAPI._get_rail_config_for_sensor(sensor.get("angle", 0))
-                auto_rail_xml = ET.SubElement(track_elem, "Rail")
-                auto_rail_xml.set("id", str(next_element_id))
-                auto_rail_xml.set("angle", str(rail_angle))
-                auto_rail_xml.set("mirror", str(rail_mirror))
-                auto_rail_xml.set("x", str(sensor.get("x", 0)))
-                auto_rail_xml.set("y", str(sensor.get("y", 0)))
-                created_auto_rails[position] = next_element_id
-                next_element_id = 71000 if (next_element_id + 1) == 8000 else next_element_id + 1
-
-        for fma in fmas:
-            fma_xml = ET.SubElement(track_elem, "Fma")
-            fma_xml.set("id", str(fma.get("id", "")))
-            fma_xml.set("name", str(fma.get("name", f"FMA{fma.get('id')}")))
-            fma_xml.set("angle", str(fma.get("angle", 0)))
-            fma_xml.set("x", str(fma.get("x", 0)))
-            fma_xml.set("y", str(fma.get("y", 0)))
-
-            fma_id_str = str(fma.get("id", "")).strip()
-            if fma_id_str and len(fma_id_str) > 1:
-                if fma_id_str[0] in ("3", "4"):
-                    fma_xml.set("refId", f"2{fma_id_str[1:]}")
-                elif fma.get("ref_id"):
-                    fma_xml.set("refId", str(fma.get("ref_id")))
-
-            rails_refs_xml = ET.SubElement(fma_xml, "Rails")
-            added_ref_ids: set[str] = set()
-
-            if fma.get("associated_rails"):
-                for rail_ref in fma["associated_rails"]:
-                    rid = str(rail_ref.get("refId", "")).strip()
-                    if not rid:
-                        continue
-
-                    rtype = rail_ref.get("type") or element_type_by_id.get(rid)
-                    attrs = {"refId": rid}
-
-                    if rtype == "crossing":
-                        crossing_source = element_crossing_by_id.get(rid, {})
-                        from_value = rail_ref.get("from") if rail_ref.get("from") is not None else crossing_source.get("from")
-                        to_value = rail_ref.get("to") if rail_ref.get("to") is not None else crossing_source.get("to")
-                        if from_value is not None:
-                            attrs["from"] = str(from_value)
-                        if to_value is not None:
-                            attrs["to"] = str(to_value)
-
-                    if rid in real_rail_ids_in_xml or rtype == "crossing":
-                        if rid not in added_ref_ids:
-                            ET.SubElement(rails_refs_xml, "Ref", attrs)
-                            added_ref_ids.add(rid)
-
-            fma_position = (fma.get("x"), fma.get("y"))
-            real_here = TrackplanAPI._find_real_rail_at_position(real_rails + switches + crossings, fma_position)
-
-            if not real_here:
-                if fma_position not in created_auto_rails:
-                    rail_angle, rail_mirror = TrackplanAPI._get_rail_config_for_fma(fma.get("angle", 0))
-                    auto_rail_xml = ET.SubElement(track_elem, "Rail")
-                    auto_rail_xml.set("id", str(next_element_id))
-                    auto_rail_xml.set("angle", str(rail_angle))
-                    auto_rail_xml.set("mirror", str(rail_mirror))
-                    auto_rail_xml.set("x", str(fma.get("x", 0)))
-                    auto_rail_xml.set("y", str(fma.get("y", 0)))
-                    created_auto_rails[fma_position] = next_element_id
-                    next_element_id = 71000 if (next_element_id + 1) == 8000 else next_element_id + 1
-
-                auto_id = str(created_auto_rails[fma_position])
-                if auto_id not in added_ref_ids:
-                    ET.SubElement(rails_refs_xml, "Ref", {"refId": auto_id})
-                    added_ref_ids.add(auto_id)
-            else:
-                rid = str(real_here.get("id"))
-                if rid and rid not in added_ref_ids:
-                    ref_attrs = {"refId": rid}
-                    if real_here.get("type") == "crossing":
-                        crossing_source = element_crossing_by_id.get(rid, {})
-                        if crossing_source.get("from") is not None:
-                            ref_attrs["from"] = str(crossing_source.get("from"))
-                        if crossing_source.get("to") is not None:
-                            ref_attrs["to"] = str(crossing_source.get("to"))
-                    ET.SubElement(rails_refs_xml, "Ref", ref_attrs)
-                    added_ref_ids.add(rid)
-
-            if fma_position in created_auto_rails and not any(ref.get("refId") == str(created_auto_rails[fma_position]) for ref in rails_refs_xml.findall("Ref")):
-                ET.SubElement(rails_refs_xml, "Ref", {"refId": str(created_auto_rails[fma_position])})
-
-            if fma.get("associated_sensors"):
-                sensors_refs_xml = ET.SubElement(fma_xml, "Sensors")
-                for sensor_ref in fma["associated_sensors"]:
-                    sid = sensor_ref and sensor_ref.get("refId")
-                    if sid:
-                        ET.SubElement(sensors_refs_xml, "Ref", {
-                            "refId": str(sid),
-                            "fmaPosition": sensor_ref.get("fmaPosition", "right"),
-                        })
-
-        if cubicles_data:
-            cubicles_elem = ET.SubElement(trackplan_root, "Cubicles")
-            for cubicle in cubicles_data:
-                cubicle_xml = ET.SubElement(cubicles_elem, "Cubicle")
-                cubicle_xml.set("height", str(cubicle.get("height", "1")))
-                cubicle_xml.set("id", str(cubicle.get("id", "")))
-                cubicle_xml.set("name", str(cubicle.get("name", "")))
-
-                rack = cubicle.get("rack", {})
-                if rack:
-                    rack_xml = ET.SubElement(cubicle_xml, "Rack")
-                    rack_xml.set("id", str(rack.get("id", "")))
-
-                    bp = rack.get("bp", {})
-                    if bp:
-                        bp_xml = ET.SubElement(rack_xml, "Bp")
-                        bp_xml.set("id", str(bp.get("id", "")))
-                        bp_xml.set("size", str(bp.get("size", "13")))
-                        bp_xml.set("startSlot", str(bp.get("startSlot", "1")))
-
-                        slots = bp.get("slots", {})
-                        if slots:
-                            sorted_slots = sorted(slots.items(), key=lambda item: int(item[0]))
-                            for slot_id, slot in sorted_slots:
-                                slot_type = slot.get("type", "EmptySlot")
-                                slot_xml_id = slot.get("id", "")
-
-                                if slot_type == "Psc":
-                                    slot_xml = ET.SubElement(bp_xml, "Psc")
-                                    slot_xml.set("id", str(slot_xml_id))
-                                    slot_xml.set("slotId", str(slot_id))
-                                elif slot_type == "Com":
-                                    slot_xml = ET.SubElement(bp_xml, "Com")
-                                    slot_xml.set("id", str(slot_xml_id))
-                                    slot_xml.set("canId", str(slot.get("canId", "")))
-                                    slot_xml.set("type", "COM_FSE")
-                                    slot_xml.set("redundant", "NORMAL")
-                                    slot_xml.set("name", str(slot.get("name", "")))
-                                    slot_xml.set("slotId", str(slot_id))
-                                    slot_xml.text = "\n\t\t\t\t\t"
-                                elif slot_type == "Aeb":
-                                    slot_xml = ET.SubElement(bp_xml, "Aeb")
-                                    slot_xml.set("id", str(slot_xml_id))
-                                    slot_xml.set("name", str(slot.get("name", "")))
-                                    slot_xml.set("canId", str(slot.get("canId", "")))
-                                    slot_xml.set("refId", str(slot.get("refId", "")))
-                                    slot_xml.set("slotId", str(slot_id))
-                                elif slot_type == "IoExb":
-                                    slot_xml = ET.SubElement(bp_xml, "IoExb")
-                                    slot_xml.set("id", str(slot_xml_id))
-                                    slot_xml.set("name", "IO-EXB")
-                                    slot_xml.set("refId", str(slot.get("refId", "")))
-                                    slot_xml.set("slotId", str(slot_id))
-
-                                    if fds_model == "FDS102":
-                                        slot_xml_ext = ET.SubElement(slot_xml, "TrackSectionExtern")
-                                        slot_1 = ET.SubElement(slot_xml_ext, "FmaExtern")
-                                        slot_1.set("refId", f'3{slot_xml_id[1:]}')
-                                        slot_2 = ET.SubElement(slot_xml_ext, "FmaExtern")
-                                        slot_2.set("refId", f'4{slot_xml_id[1:]}')
-                                elif slot_type == "EmptySlot":
-                                    slot_xml = ET.SubElement(bp_xml, "EmptySlot")
-                                    slot_xml.set("id", str(slot_xml_id))
-                                    slot_xml.set("slotId", str(slot_id))
-
-        if trackplan_root.find("Supervisors") is None:
-            ET.SubElement(trackplan_root, "Supervisors")
-        if trackplan_root.find("Cubicles") is None:
-            ET.SubElement(trackplan_root, "Cubicles")
-
-        normalize_trackplan_order(trackplan_root)
-        return TrackplanAPI._prettify_xml(trackplan_root)
-
-    @staticmethod
-    def write_trackplan_xml(filename: str, *args: Any, **kwargs: Any) -> str:
-        xml_text = TrackplanAPI.build_trackplan_xml(*args, **kwargs)
-        with open(filename, "w", encoding="utf-8") as handle:
-            handle.write(xml_text)
-        return filename
 
     @staticmethod
     def load_element_images(
@@ -1034,7 +744,8 @@ class TrackplanDesignerView():
     def create_trackplan_canvas(self):
         """Cria a aba do designer de Trackplan minimalista com foco na grade"""
         frame = ttk.Frame(self.root)
-        
+        frame.pack(fill=tk.BOTH, expand=True)
+
         # === TOOLBAR COMPACTA NO TOPO ===
         toolbar = ttk.Frame(frame, padding="3")
         toolbar.pack(fill=tk.X)
@@ -1602,167 +1313,262 @@ class TrackplanDesignerView():
             print(f"Erro ao criar imagem FMA com texto '{text}' (ângulo {angle}°): {e}")
             return None
 
-def draw_rotated_rect(self, draw, cx, cy, width, height, angle_deg, outline, fill, line_width=1):
-    print(f"Desenhando retângulo rotacionado: centro=({cx},{cy}), tamanho=({width}x{height}), ângulo={angle_deg}°")
-    """Desenha um retângulo rotacionado dado centro, tamanho e ângulo."""
-    angle_rad = math.radians(angle_deg)
-    cos_a = math.cos(angle_rad)
-    sin_a = math.sin(angle_rad)
+    def carregar_elementos(self, elements: list[dict]) -> None:
+        """Recebe a lista vinda de get_trackplan_elements() e desenha no canvas."""
+        self.trackplan_elements = elements
+        self.element_position_map = {(e["x"], e["y"]): e for e in elements}
+        self._desenhar_elementos()
 
-    hw, hh = width / 2, height / 2
+    def _desenhar_elementos(self) -> None:
+        self.trackplan_canvas.delete("element")
 
-    # 4 cantos relativos ao centro
-    corners = [
-        (-hw, -hh),
-        ( hw, -hh),
-        ( hw,  hh),
-        (-hw,  hh),
-    ]
+        for el in self.trackplan_elements:
+            x, y = el["x"], el["y"]
+            # +1 porque a linha/coluna 0 é reservada para os números (igual ao apply_grid)
+            cx = (x + 1) * self.grid_size + self.grid_size // 2
+            cy = (y + 1) * self.grid_size + self.grid_size // 2
 
-    # Rotacionar e transladar
-    rotated = [
-        (cx + x * cos_a - y * sin_a,
-        cy + x * sin_a + y * cos_a)
-        for x, y in corners
-    ]
+            key = self._chave_imagem(el)
+            img = self.element_images.get(key)
+            if img is None:
+                print(f"Imagem não encontrada para elemento {el.get('type')} (key={key})")
+                continue
 
-    draw.polygon(rotated, outline=outline, fill=fill)
-
-def create_fma_blue_image_with_integrated_text(self, angle, text):
-    """
-    Cria uma imagem FMA AZUL personalizada com texto integrado (para highlighting)
-    
-    Args:
-        angle: Ângulo da FMA (0, 90, 180, 270)  
-        text: Texto a ser integrado na imagem (ex: "2DAT", "1AT", etc)
-        
-    Returns:
-        ImageTk.PhotoImage azul pronto para uso no canvas ou None se erro
-    """
-    try:
-        from PIL import Image, ImageDraw, ImageFont, ImageTk
-        
-        # Criar imagem 30x30 com fundo transparente
-        img = Image.new('RGBA', (30, 30), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        
-        # Definir posições dos quadrados de texto por ângulo - AJUSTADO 1 pixel para cima
-        text_areas = {
-            0:   {'x1': 2,  'y1': 18, 'x2': 29, 'y2': 28, 'rotation': 0},    # Abaixo da horizontal
-            45:  {'x1': 2,  'y1': 18, 'x2': 13, 'y2': 28, 'rotation': 45},   # Canto inferior-esquerdo
-            90:  {'x1': 18, 'y1': 2,  'x2': 28, 'y2': 29, 'rotation': 90},   # À direita da vertical
-            135: {'x1': 17, 'y1': 18, 'x2': 28, 'y2': 28, 'rotation': 135},  # Canto inferior-direito
-            180: {'x1': 2,  'y1': 3,  'x2': 29, 'y2': 13, 'rotation': 180},  # Acima da horizontal
-            225: {'x1': 17, 'y1': 2,  'x2': 28, 'y2': 13, 'rotation': 225},  # Canto superior-direito
-            270: {'x1': 3,  'y1': 2,  'x2': 13, 'y2': 29, 'rotation': 270},  # À esquerda da vertical
-            315: {'x1': 2,  'y1': 2,  'x2': 13, 'y2': 13, 'rotation': 315},  # Canto superior-esquerdo
-        }
-        
-        if angle not in text_areas:
-            angle = 0  # Fallback para ângulo 0
-        
-        area = text_areas[angle]
-        
-        # CORES AZUIS para highlighting
-        blue_line_color = (48, 48, 227, 255)      # Azul para linhas
-        blue_outline_color = (48, 48, 227, 255)   # Azul para contorno
-        blue_fill_color = (255, 255, 255, 255)    # Fundo BRANCO para a caixa de texto (igual às FMAs normais)
-        blue_text_color = (0, 0, 0, 255)          # Texto PRETO para legibilidade no fundo branco
-        
-        # Desenhar linha principal baseada no ângulo - AJUSTADO 1 pixel para cima
-        if angle == 0:
-            # Linha horizontal: x=1,y=13 até x=29,y=17
-            for y in range(13, 17):
-                draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
-        elif angle == 45:
-            # Linha diagonal com espessura equivalente
-            draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
-        elif angle == 90:
-            # Linha vertical: x=13,y=0 até x=17,y=29
-            for x in range(13, 17):
-                draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
-        elif angle == 135:
-            # Linha diagonal invertida com espessura equivalente
-            draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
-        elif angle == 180:
-            # Linha horizontal invertida: x=1,y=13 até x=29,y=17
-            for y in range(13, 17):
-                draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
-        elif angle == 225:
-            # Linha diagonal com espessura equivalente
-            draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
-        elif angle == 270:
-            # Linha vertical invertida: x=13,y=1 até x=17,y=29
-            for x in range(13, 17):
-                draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
-        elif angle == 315:
-            # Linha diagonal com espessura equivalente
-            draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
-
-        # Desenhar quadrado de texto (EM AZUL)
-        # Parâmetros da caixa rotacionada por ângulo
-        rotated_boxes = {
-            45:  {'cx': 20, 'cy': 10, 'w': 14, 'h': 7, 'angle': 45},
-            135: {'cx': 20, 'cy': 20, 'w': 14, 'h': 7, 'angle': 135},
-            225: {'cx': 10, 'cy': 20, 'w': 14, 'h': 7, 'angle': 45},
-            315: {'cx': 10, 'cy': 10, 'w': 14, 'h': 7, 'angle': 135},
-        }
-
-        if angle in rotated_boxes:
-            b = rotated_boxes[angle]
-            self.draw_rotated_rect(
-                draw,
-                cx=b['cx'], cy=b['cy'],
-                width=b['w'], height=b['h'],
-                angle_deg=b['angle'],
-                outline=(0, 0, 0, 255),
-                fill=(255, 255, 255, 255)
+            self.trackplan_canvas.create_image(
+                cx, cy, image=img, tags=("element", f"el_{el.get('id')}")
             )
-        else:
-            # Ângulos normais continuam usando draw.rectangle
-            draw.rectangle([
-                (area['x1'], area['y1']),
-                (area['x2'], area['y2'])
-            ], outline=(0, 0, 0, 255), width=1, fill=(255, 255, 255, 255))
 
-        # Adicionar texto no quadrado (EM AZUL ESCURO)
+    def _chave_imagem(self, el: dict) -> str:
+        tipo = el.get("type")
+        angle = el.get("angle", 0)
+        mirror = el.get("mirror", 0)
+
+        if tipo in ("rail", "switch"):
+            return f"{tipo}_{angle}_{mirror}"
+        if tipo == "sensor":
+            return f"sensor_{angle}"
+        if tipo == "link":
+            return f"link_{angle}"
+        if tipo == "crossing":
+            return f"crossing_{angle}"
+        if tipo == "fma":
+            return f"fma_{angle}_PREV"
+        return ""
+
+    def draw_rotated_rect(self, draw, cx, cy, width, height, angle_deg, outline, fill, line_width=1):
+        print(f"Desenhando retângulo rotacionado: centro=({cx},{cy}), tamanho=({width}x{height}), ângulo={angle_deg}°")
+        """Desenha um retângulo rotacionado dado centro, tamanho e ângulo."""
+        angle_rad = math.radians(angle_deg)
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+
+        hw, hh = width / 2, height / 2
+
+        # 4 cantos relativos ao centro
+        corners = [
+            (-hw, -hh),
+            ( hw, -hh),
+            ( hw,  hh),
+            (-hw,  hh),
+        ]
+
+        # Rotacionar e transladar
+        rotated = [
+            (cx + x * cos_a - y * sin_a,
+            cy + x * sin_a + y * cos_a)
+            for x, y in corners
+        ]
+
+        draw.polygon(rotated, outline=outline, fill=fill)
+
+    def create_fma_blue_image_with_integrated_text(self, angle, text):
+        """
+        Cria uma imagem FMA AZUL personalizada com texto integrado (para highlighting)
+        
+        Args:
+            angle: Ângulo da FMA (0, 90, 180, 270)  
+            text: Texto a ser integrado na imagem (ex: "2DAT", "1AT", etc)
+            
+        Returns:
+            ImageTk.PhotoImage azul pronto para uso no canvas ou None se erro
+        """
         try:
-            font = ImageFont.truetype("arial.ttf", 4, bold=True)  # Fonte menor para FMAs
-        except:
-            font = ImageFont.load_default()
-        
-        # Calcular centro do quadrado de texto (toda FMA já foi ajustada 1 pixel para cima)
-        text_center_x = (area['x1'] + area['x2']) // 2
-        text_center_y = (area['y1'] + area['y2']) // 2  # Centro normal, pois toda FMA subiu
-        
-        # Para ângulos 90° e 270°, criar texto rotacionado
-        if angle == 90:
-            # Criar imagem temporária para rotacionar o texto
-            temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
-            temp_draw = ImageDraw.Draw(temp_img)
-            temp_draw.text((25, 25), text, fill=blue_text_color, font=font, anchor="mm")
-            temp_img = temp_img.rotate(-90, expand=False)  # Rotacionar 90° horário
-            # Colar texto rotacionado na posição correta
-            img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
-        elif angle == 270:
-            # Criar imagem temporária para rotacionar o texto
-            temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
-            temp_draw = ImageDraw.Draw(temp_img)
-            temp_draw.text((25, 25), text, fill=blue_text_color, font=font, anchor="mm")
-            temp_img = temp_img.rotate(90, expand=False)  # Rotacionar 90° anti-horário
-            # Colar texto rotacionado na posição correta
-            img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
-        else:
-            # Texto normal (0° e 180°)
-            draw.text((text_center_x, text_center_y), text, fill=blue_text_color, font=font, anchor="mm")
-        
-        # Converter para ImageTk.PhotoImage com correção de bug Python 3.13
-        return self.create_safe_photo_image(img, f"fma_blue_{angle}_{text}")
-        
-    except Exception as e:
-        print(f"Erro ao criar imagem FMA AZUL com texto '{text}' (ângulo {angle}°): {e}")
-        return None
+            from PIL import Image, ImageDraw, ImageFont, ImageTk
+            
+            # Criar imagem 30x30 com fundo transparente
+            img = Image.new('RGBA', (30, 30), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            
+            # Definir posições dos quadrados de texto por ângulo - AJUSTADO 1 pixel para cima
+            text_areas = {
+                0:   {'x1': 2,  'y1': 18, 'x2': 29, 'y2': 28, 'rotation': 0},    # Abaixo da horizontal
+                45:  {'x1': 2,  'y1': 18, 'x2': 13, 'y2': 28, 'rotation': 45},   # Canto inferior-esquerdo
+                90:  {'x1': 18, 'y1': 2,  'x2': 28, 'y2': 29, 'rotation': 90},   # À direita da vertical
+                135: {'x1': 17, 'y1': 18, 'x2': 28, 'y2': 28, 'rotation': 135},  # Canto inferior-direito
+                180: {'x1': 2,  'y1': 3,  'x2': 29, 'y2': 13, 'rotation': 180},  # Acima da horizontal
+                225: {'x1': 17, 'y1': 2,  'x2': 28, 'y2': 13, 'rotation': 225},  # Canto superior-direito
+                270: {'x1': 3,  'y1': 2,  'x2': 13, 'y2': 29, 'rotation': 270},  # À esquerda da vertical
+                315: {'x1': 2,  'y1': 2,  'x2': 13, 'y2': 13, 'rotation': 315},  # Canto superior-esquerdo
+            }
+            
+            if angle not in text_areas:
+                angle = 0  # Fallback para ângulo 0
+            
+            area = text_areas[angle]
+            
+            # CORES AZUIS para highlighting
+            blue_line_color = (48, 48, 227, 255)      # Azul para linhas
+            blue_outline_color = (48, 48, 227, 255)   # Azul para contorno
+            blue_fill_color = (255, 255, 255, 255)    # Fundo BRANCO para a caixa de texto (igual às FMAs normais)
+            blue_text_color = (0, 0, 0, 255)          # Texto PRETO para legibilidade no fundo branco
+            
+            # Desenhar linha principal baseada no ângulo - AJUSTADO 1 pixel para cima
+            if angle == 0:
+                # Linha horizontal: x=1,y=13 até x=29,y=17
+                for y in range(13, 17):
+                    draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+            elif angle == 45:
+                # Linha diagonal com espessura equivalente
+                draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+            elif angle == 90:
+                # Linha vertical: x=13,y=0 até x=17,y=29
+                for x in range(13, 17):
+                    draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+            elif angle == 135:
+                # Linha diagonal invertida com espessura equivalente
+                draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
+            elif angle == 180:
+                # Linha horizontal invertida: x=1,y=13 até x=29,y=17
+                for y in range(13, 17):
+                    draw.line([(1, y), (29, y)], fill=(0, 0, 0, 255), width=1)
+            elif angle == 225:
+                # Linha diagonal com espessura equivalente
+                draw.line([(1, 29), (29, 1)], fill=(0, 0, 0, 255), width=4)
+            elif angle == 270:
+                # Linha vertical invertida: x=13,y=1 até x=17,y=29
+                for x in range(13, 17):
+                    draw.line([(x, 1), (x, 29)], fill=(0, 0, 0, 255), width=1)
+            elif angle == 315:
+                # Linha diagonal com espessura equivalente
+                draw.line([(1, 1), (29, 29)], fill=(0, 0, 0, 255), width=4)
 
+            # Desenhar quadrado de texto (EM AZUL)
+            # Parâmetros da caixa rotacionada por ângulo
+            rotated_boxes = {
+                45:  {'cx': 20, 'cy': 10, 'w': 14, 'h': 7, 'angle': 45},
+                135: {'cx': 20, 'cy': 20, 'w': 14, 'h': 7, 'angle': 135},
+                225: {'cx': 10, 'cy': 20, 'w': 14, 'h': 7, 'angle': 45},
+                315: {'cx': 10, 'cy': 10, 'w': 14, 'h': 7, 'angle': 135},
+            }
+
+            if angle in rotated_boxes:
+                b = rotated_boxes[angle]
+                self.draw_rotated_rect(
+                    draw,
+                    cx=b['cx'], cy=b['cy'],
+                    width=b['w'], height=b['h'],
+                    angle_deg=b['angle'],
+                    outline=(0, 0, 0, 255),
+                    fill=(255, 255, 255, 255)
+                )
+            else:
+                # Ângulos normais continuam usando draw.rectangle
+                draw.rectangle([
+                    (area['x1'], area['y1']),
+                    (area['x2'], area['y2'])
+                ], outline=(0, 0, 0, 255), width=1, fill=(255, 255, 255, 255))
+
+            # Adicionar texto no quadrado (EM AZUL ESCURO)
+            try:
+                font = ImageFont.truetype("arial.ttf", 4, bold=True)  # Fonte menor para FMAs
+            except:
+                font = ImageFont.load_default()
+            
+            # Calcular centro do quadrado de texto (toda FMA já foi ajustada 1 pixel para cima)
+            text_center_x = (area['x1'] + area['x2']) // 2
+            text_center_y = (area['y1'] + area['y2']) // 2  # Centro normal, pois toda FMA subiu
+            
+            # Para ângulos 90° e 270°, criar texto rotacionado
+            if angle == 90:
+                # Criar imagem temporária para rotacionar o texto
+                temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                temp_draw.text((25, 25), text, fill=blue_text_color, font=font, anchor="mm")
+                temp_img = temp_img.rotate(-90, expand=False)  # Rotacionar 90° horário
+                # Colar texto rotacionado na posição correta
+                img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
+            elif angle == 270:
+                # Criar imagem temporária para rotacionar o texto
+                temp_img = Image.new('RGBA', (50, 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                temp_draw.text((25, 25), text, fill=blue_text_color, font=font, anchor="mm")
+                temp_img = temp_img.rotate(90, expand=False)  # Rotacionar 90° anti-horário
+                # Colar texto rotacionado na posição correta
+                img.paste(temp_img, (text_center_x - 25, text_center_y - 25), temp_img)
+            else:
+                # Texto normal (0° e 180°)
+                draw.text((text_center_x, text_center_y), text, fill=blue_text_color, font=font, anchor="mm")
+            
+            # Converter para ImageTk.PhotoImage com correção de bug Python 3.13
+            return self.create_safe_photo_image(img, f"fma_blue_{angle}_{text}")
+            
+        except Exception as e:
+            print(f"Erro ao criar imagem FMA AZUL com texto '{text}' (ângulo {angle}°): {e}")
+            return None
+
+    def parse_cubicle_from_xml(self, cubicle_elem) -> Optional[Dict[str, Any]]:
+            """Parse um elemento <Cubicle> do XML e retorna dicionário com os dados.
+
+            Args:
+                cubicle_elem: Elemento XML <Cubicle> a ser parseado
+
+            Returns:
+                Dicionário com os dados do cubicle ou None se inválido
+            """
+            try:
+                cubicle_data = {
+                    'id': cubicle_elem.get('id', ''),
+                    'name': cubicle_elem.get('name', ''),
+                    'height': _safe_int(cubicle_elem.get('height', '1')),
+                    'x': _safe_int(cubicle_elem.get('x', '0')),
+                    'y': _safe_int(cubicle_elem.get('y', '0')),
+                    'angle': _safe_int(cubicle_elem.get('angle', '0')),
+                }
+                # Retorna apenas se tiver dados mínimos válidos
+                if not cubicle_data['id'] and not cubicle_data['name']:
+                    return None
+                return cubicle_data
+            except Exception:
+                return None
+
+    def load_cubicles_from_xml(self, trackplan_root):
+        """Carrega cubicles de um arquivo Trackplan.xml"""
+        cubicles_data = []
+        try:
+            root = trackplan_root.getroot() if isinstance(trackplan_root, ET.ElementTree) else trackplan_root
+            print(f"root {root}")
+            # Procurar seção de Cubicles
+            if root.tag == 'Cubicles':
+                cubicles_section = root
+            elif root.tag == 'Trackplan':
+                cubicles_section = root.find("Cubicles")
+            else:
+                cubicles_section = root.find('.//Cubicles')
+
+            if cubicles_section is None:
+                messagebox.showwarning("Aviso", "Arquivo XML não contém seção de Cubículos.")
+                return
+
+            
+            for cubicle_elem in cubicles_section.findall("Cubicle"):
+                cubicle_data = self.parse_cubicle_from_xml(cubicle_elem)
+                if cubicle_data:
+                    cubicles_data.append(cubicle_data)
+
+            return cubicles_data
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao carregar XML: {str(e)}")
 
 
 __all__ = [

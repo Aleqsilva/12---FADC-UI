@@ -8,8 +8,7 @@ from PIL import Image, ImageTk
 # Try to import from the main application
 try:
     from trackplan_api import TrackplanAPI as TrackplanService
-    from trackplan_api import TrackplanXMLData, TrackplanLoadedState, TrackplanAssetBundle
-    from trackplan_api import TrackplanDesignerView
+    from trackplan_api import TrackplanXMLData, TrackplanLoadedState, TrackplanAssetBundle, TrackplanDesignerView
     TRACKPLAN_AVAILABLE = True
 except ImportError:
     TRACKPLAN_AVAILABLE = False
@@ -55,8 +54,7 @@ def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
                         trackplan_content = content
                     elif 'FdsConfig' in xml_name:
                         fds_config_content = content
-
-
+            
             if trackplan_content is None:
                 return {'success': False, 'error': 'Trackplan.xml not found in zip'}
 
@@ -64,6 +62,8 @@ def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
                 trackplan_root = ET.fromstring(trackplan_content)
                 xml_data = TrackplanService.parse_trackplan_xml(trackplan_root, 'Trackplan.xml')
                 _loaded_data = TrackplanService.populate_loaded_trackplan(xml_data)
+                cubicle_data = TrackplanDesignerView.load_cubicles_from_xml(trackplan_root)
+                print(len(cubicle_data))
             except Exception as e:
                 return {'success': False, 'error': f'Error parsing Trackplan.xml: {str(e)}'}
 
@@ -82,6 +82,7 @@ def open_fds_recovery(zip_path: str) -> Dict[str, Any]:
                 'success': True,
                 'xml_data': xml_data,
                 'trackplan_data': _loaded_data,
+                #'cubicle_data': cubicle_data,
                 'fds_config_data': fds_config_content,
                 'element_images': _element_images,
                 'error': None

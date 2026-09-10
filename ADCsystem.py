@@ -1061,6 +1061,7 @@ class MainView:
         self._frame_tabela_aeb = None
         self._tabela_encaminhamento = None
         self._tabela_aeb = None
+        self._designer_atual = None
 
     def iniciar(self) -> None:
         self._root.title("ADC System")
@@ -1513,11 +1514,6 @@ class MainView:
             result = open_fds_recovery(filename)
             if result['success']:
                 elements = get_trackplan_elements()
-                # Get an image for a rail element at 0° with mirror 0
-                rail_image = get_element_image('rail', 0, 0)
-                # Get metadata about the trackplan
-                metadata = get_trackplan_metadata()
-
                 #self._controller.simular()
                 
                 xml_data = result['trackplan_data']
@@ -1527,6 +1523,10 @@ class MainView:
                 designer = create_canvas_toplevel(top1)
                 designer.create_trackplan_canvas()
                 designer._apply_trackplan_dimensions(result['xml_data'])
+                designer.carregar_elementos(elements)
+                cubicle_data = designer.load_cubicles_from_xml(result['xml_data'])
+                print(len(cubicle_data))
+                self._designer_atual = designer
 
                 self._status("Simulacao concluida com sucesso.")
         except Exception as exc:
